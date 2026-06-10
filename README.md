@@ -134,3 +134,18 @@ atau kalau token salah:
 ```text
 ERROR|TOKEN_INVALID
 ```
+
+## Update HP / Auto Pull Data Sheet
+Versi ini menambahkan auto pull data dari Google Sheet setelah login. Perangkat baru (HP/laptop lain) tidak lagi menampilkan data pelanggan/pengeluaran contoh dari localStorage, tetapi langsung mengambil data dari Sheet melalui Apps Script.
+
+Yang berubah:
+- app.js: defaultPelanggan dikosongkan.
+- app.js: defaultPengeluaran dikosongkan.
+- app.js: showDashboard() dibuat async dan memanggil autoPullFromGoogleSheetOnLogin().
+- app.js: fungsi autoPullFromGoogleSheetOnLogin() ditambahkan.
+
+Yang wajib diupdate:
+1. Upload/replace app.js ke GitHub.
+2. Tunggu Netlify deploy, atau jalankan Deploy project without cache.
+3. kode.gs tidak wajib diganti untuk fix ini karena action getAll sudah ada di Apps Script versi final. Jika Apps Script pelanggan masih versi lama, copy ulang apps-script/kode.gs lalu Deploy New Version.
+4. Di HP, tutup browser lalu buka ulang. Jika masih muncul data lama, hapus data situs/cache atau coba mode samaran.

@@ -179,12 +179,9 @@ const defaultPaket = [
   }
 ];
 
-const defaultPelanggan = [
-  { id: crypto.randomUUID(), nama: 'Budi Santoso', phone: '081234567890', alamat: 'Kp. Tandon RT 01', username: 'budi01', password: '12345', tipe: 'Pascabayar', paket: '10 Mbps', status: 'Aktif', tanggalAktif: '2026-06-01', tempo: '2026-06-10' },
-  { id: crypto.randomUUID(), nama: 'Siti Aminah', phone: '081987654321', alamat: 'Kp. Tandon RT 02', username: 'siti02', password: '12345', tipe: 'Prabayar', paket: '10 Mbps', status: 'Aktif', tanggalAktif: '2026-06-09', tempo: '2026-07-09' },
-  { id: crypto.randomUUID(), nama: 'Agus Pratama', phone: '082222333344', alamat: 'Kp. Tandon RT 03', username: 'agus03', password: '12345', tipe: 'Pascabayar', paket: '10 Mbps', status: 'Isolir', tanggalAktif: '2026-05-01', tempo: '2026-06-10' },
-  { id: crypto.randomUUID(), nama: 'Rina Lestari', phone: '083333444455', alamat: 'Kp. Tandon RT 04', username: 'rina04', password: '12345', tipe: 'Prabayar', paket: '10 Mbps', status: 'Expired', tanggalAktif: '2026-05-09', tempo: '2026-06-09' }
-];
+// Produksi: jangan tampilkan pelanggan contoh di perangkat baru.
+// Data asli akan otomatis ditarik dari Google Sheet setelah login.
+const defaultPelanggan = [];
 
 const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbykFoYQUqJp1WVvBqL3zYCHykAmIXqx1i2RiNieD2lYBIiOC_CRJyV2VqsJHC6oPoEM/exec';
 
@@ -232,24 +229,8 @@ Mohon segera melakukan pembayaran agar layanan tetap aktif.
 Terima kasih. - {usaha}`
 };
 
-const defaultPengeluaran = [
-  {
-    id: crypto.randomUUID(),
-    date: todayDate(),
-    category: 'Internet / Bandwidth',
-    description: 'Bayar bandwidth bulanan',
-    amount: 2500000,
-    method: 'Transfer'
-  },
-  {
-    id: crypto.randomUUID(),
-    date: todayDate(),
-    category: 'Listrik',
-    description: 'Listrik perangkat jaringan',
-    amount: 350000,
-    method: 'Tunai'
-  }
-];
+// Produksi: jangan tampilkan pengeluaran contoh di perangkat baru.
+const defaultPengeluaran = [];
 
 const defaultAset = [];
 
@@ -422,11 +403,16 @@ function normalizePackages() {
   savePaket();
 }
 
-function showDashboard() {
+async function showDashboard() {
   loginPage.classList.add('hidden');
   dashboardPage.classList.remove('hidden');
-  renderAll();
   applySettingsToUI();
+
+  // Perangkat baru seperti HP belum punya localStorage.
+  // Setelah login, langsung tarik data dari Google Sheet supaya tidak muncul data default lokal.
+  await autoPullFromGoogleSheetOnLogin();
+
+  renderAll();
   startSheetAutoRefresh();
   refreshPemasukanFromSheet({ force: true });
 }
@@ -3592,6 +3578,50 @@ async function pushToGoogleSheet() {
     await syncAllToGoogleSheet({ silent: false });
   } finally {
     setSyncLoading(false);
+  }
+}
+
+
+async function autoPullFromGoogleSheetOnLogin() {
+  const endpoint = settings.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL;
+  if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
+
+  try {
+    const result = await postToAppsScript(endpoint, { action: 'getAll' });
+    if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
+
+    const data = result.data || {};
+    pelanggan = Array.isArray(data.pelanggan) ? data.pelanggan : pelanggan;
+    paket = Array.isArray(data.paket) ? data.paket : paket;
+    tagihan = Array.isArray(data.tagihan) ? data.tagihan : tagihan;
+    pembayaran = Array.isArray(data.pembayaran) ? data.pembayaran : pembayaran;
+    pemasukan = Array.isArray(data.pemasukan) ? data.pemasukan : pemasukan;
+    pengeluaran = Array.isArray(data.pengeluaran) ? data.pengeluaran : pengeluaran;
+    aset = Array.isArray(data.aset) ? data.aset : aset;
+    cashAccounts = Array.isArray(data.cashAccounts) ? data.cashAccounts : cashAccounts;
+    cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
+    pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
+    activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
+    settings = data.settings && typeof data.settings === 'object' ? normalizeSettings({ ...settings, ...data.settings }) : normalizeSettings(settings);
+
+    savePelanggan();
+    savePaket();
+    saveTagihan();
+    savePembayaran();
+    savePemasukan();
+    savePengeluaran();
+    saveAset();
+    saveCashAccounts();
+    saveCashAdjustments();
+    saveCommands();
+    saveActivityLogs();
+    saveSettings();
+
+    return { ok: true };
+  } catch (error) {
+    console.error(error);
+    showToast('Data Sheet belum berhasil dimuat. Cek URL Apps Script / koneksi.');
+    return { ok: false, message: error.message };
   }
 }
 
