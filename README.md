@@ -40,3 +40,18 @@ Versi ini memakai arsitektur:
 - Data contoh bawaan dihapus: pelanggan, paket, pengeluaran, aset, rekening/kas kosong.
 - Dashboard perangkat baru akan mulai dari 0 dan otomatis mengambil data dari Google Sheet.
 - Pastikan Netlify Environment Variable APPS_SCRIPT_URL sudah diisi agar perangkat baru tidak memakai URL lokal lama.
+
+## Update Full Sync HP/Laptop 5 Detik
+Versi ini menambahkan patch sinkron penuh:
+- Hapus pelanggan sekarang ikut tersimpan ke Google Sheet.
+- Hapus paket/tagihan/tunggakan juga dipush ke Google Sheet.
+- Semua save lokal penting otomatis memicu sinkron `saveAll` ke Google Sheet.
+- Auto refresh antar perangkat berjalan tiap 5 detik.
+- Saat perangkat sedang menyimpan data, refresh otomatis ditahan dulu supaya data lama dari Sheet tidak menimpa perubahan baru.
+- Default data contoh tetap kosong/0.
+
+Wajib update:
+1. Upload/replace semua file ke GitHub.
+2. Deploy ulang Netlify tanpa cache.
+3. Copy `apps-script/kode.gs` ke Google Apps Script lalu deploy New version.
+4. Refresh HP/laptop atau buka mode incognito jika cache lama masih muncul.

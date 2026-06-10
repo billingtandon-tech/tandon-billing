@@ -4535,3 +4535,266 @@ function escapeHtml(value) {
 
 startCountdownTimer();
 if (localStorage.getItem('tandon_login') === 'true') showDashboard();
+
+/* =========================================================
+   PATCH FINAL: Sinkron penuh HP/Laptop + auto refresh 5 detik
+   - Semua perubahan lokal penting otomatis dikirim ke Google Sheet.
+   - Refresh 5 detik tetap menarik data terbaru dari Sheet.
+   - Mencegah data lokal yang sudah dihapus muncul lagi karena race refresh.
+   ========================================================= */
+let sheetWriteBackTimer = null;
+let lastLocalWriteAt = 0;
+
+function canAutoWriteBackToSheet() {
+  return localStorage.getItem('tandon_login') === 'true' && !isRefreshingAllData && !isWritingToSheet;
+}
+
+function scheduleSheetWriteBack(source = 'local-change') {
+  if (!canAutoWriteBackToSheet()) return;
+  lastLocalWriteAt = Date.now();
+  if (sheetWriteBackTimer) clearTimeout(sheetWriteBackTimer);
+  sheetWriteBackTimer = setTimeout(async () => {
+    sheetWriteBackTimer = null;
+    if (!canAutoWriteBackToSheet()) return;
+    const result = await syncAllToGoogleSheet({ silent: true, source });
+    if (result && result.ok) {
+      await refreshAllDataFromSheet({ force: true, silent: true });
+    } else if (result && result.message) {
+      console.warn('Auto sync gagal:', result.message);
+    }
+  }, 700);
+}
+
+// Override save lokal agar semua menu penting otomatis ikut sinkron ke Sheet.
+function savePelanggan() {
+  localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(pelanggan));
+  scheduleSheetWriteBack('pelanggan');
+}
+function savePaket() {
+  localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(paket));
+  scheduleSheetWriteBack('paket');
+}
+function saveTagihan() {
+  localStorage.setItem(INVOICE_STORAGE_KEY, JSON.stringify(tagihan));
+  scheduleSheetWriteBack('tagihan');
+}
+function savePembayaran() {
+  localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(pembayaran));
+  scheduleSheetWriteBack('pembayaran');
+}
+function savePemasukan() {
+  localStorage.setItem(INCOME_STORAGE_KEY, JSON.stringify(pemasukan));
+  scheduleSheetWriteBack('pemasukan');
+}
+function savePengeluaran() {
+  localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(pengeluaran));
+  scheduleSheetWriteBack('pengeluaran');
+}
+function saveAset() {
+  localStorage.setItem(ASSET_STORAGE_KEY, JSON.stringify(aset));
+  scheduleSheetWriteBack('aset');
+}
+function saveCashAccounts() {
+  localStorage.setItem(CASH_ACCOUNT_STORAGE_KEY, JSON.stringify(cashAccounts));
+  scheduleSheetWriteBack('bank-tunai');
+}
+function saveCashAdjustments() {
+  localStorage.setItem(CASH_ADJUST_STORAGE_KEY, JSON.stringify(cashAdjustments));
+  scheduleSheetWriteBack('penyesuaian-kas');
+}
+function saveCommands() {
+  localStorage.setItem(COMMAND_STORAGE_KEY, JSON.stringify(pendingCommands));
+  scheduleSheetWriteBack('pending-command');
+}
+function saveActivityLogs() {
+  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLogs));
+  // Log aktivitas tidak wajib memicu saveAll karena sudah punya sinkron sendiri.
+}
+function saveSettings() {
+  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+}
+
+// Override syncAll supaya selalu pakai endpoint Netlify config dan aman dari race auto refresh 5 detik.
+async function syncAllToGoogleSheet(options = {}) {
+  if (isWritingToSheet && !options.force) return { ok: false, message: 'Sedang menyimpan data' };
+
+  isWritingToSheet = true;
+  try {
+    const endpoint = await getAppsScriptEndpoint();
+    if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum tersedia' };
+
+    const payload = {
+      action: 'saveAll',
+      data: {
+        pelanggan,
+        paket,
+        tagihan,
+        pembayaran,
+        pemasukan,
+        pengeluaran,
+        aset,
+        cashAccounts,
+        cashAdjustments,
+        pendingCommands,
+        activityLogs,
+        settings
+      }
+    };
+
+    const result = await postToAppsScript(endpoint, payload);
+    if (!result.ok) throw new Error(result.message || 'Gagal menyimpan data');
+    if (!options.silent) showToast('Data berhasil disinkronkan ke Google Sheet');
+    return result;
+  } catch (error) {
+    console.error(error);
+    if (!options.silent) showToast(`Gagal sinkron ke Google Sheet: ${error.message}`);
+    return { ok: false, message: error.message };
+  } finally {
+    isWritingToSheet = false;
+  }
+}
+
+// Override refresh supaya tidak menarik data lama saat user baru saja menghapus/mengedit.
+async function refreshAllDataFromSheet(options = {}) {
+  if (isRefreshingAllData && !options.force) return { ok: false, message: 'Refresh masih berjalan' };
+  if (isWritingToSheet && !options.force) return { ok: false, message: 'Sedang menyimpan data' };
+  if (!options.force && sheetWriteBackTimer) return { ok: false, message: 'Menunggu sinkron lokal' };
+
+  const endpoint = await getAppsScriptEndpoint();
+  if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
+
+  isRefreshingAllData = true;
+  try {
+    const result = await postToAppsScript(endpoint, {
+      action: 'getAll',
+      t: Date.now()
+    });
+
+    if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
+    applySheetDataToLocal(result.data || {});
+    settings.appsScriptUrl = endpoint;
+    saveSettings();
+    renderAll();
+    return { ok: true };
+  } catch (error) {
+    console.warn('Gagal refresh semua data dari Google Sheet:', error);
+    if (!options.silent) showToast('Gagal refresh data dari Google Sheet');
+    return { ok: false, message: error.message };
+  } finally {
+    isRefreshingAllData = false;
+  }
+}
+
+function startSheetAutoRefresh() {
+  stopSheetAutoRefresh();
+  refreshAllDataFromSheet({ force: true, silent: true });
+  sheetRefreshTimer = setInterval(() => {
+    if (localStorage.getItem('tandon_login') === 'true' && !document.hidden) {
+      refreshAllDataFromSheet({ silent: true });
+    }
+  }, 5000);
+}
+
+// Override hapus pelanggan supaya langsung tersimpan ke Sheet dan tersinkron ke HP/Laptop lain.
+async function hapusPelanggan(id) {
+  const customer = pelanggan.find((item) => item.id === id);
+  if (!customer) return;
+  if (!confirm(`Hapus pelanggan ${customer.nama}?`)) return;
+
+  const backup = {
+    pelanggan: [...pelanggan],
+    tagihan: [...tagihan]
+  };
+
+  pelanggan = pelanggan.filter((item) => item.id !== id);
+  // Tagihan yang terikat pelanggan ikut dibersihkan supaya rekap tidak menggantung.
+  tagihan = tagihan.filter((row) => row.customerId !== id && row.pelangganId !== id);
+
+  addActivityLog('Hapus Pelanggan', `${customer.nama} / ${customer.username || '-'}`, { pelangganId: customer.id, username: customer.username });
+  savePelanggan();
+  saveTagihan();
+  renderAll();
+
+  const result = await syncAllToGoogleSheet({ silent: true, force: true });
+  if (!result.ok) {
+    pelanggan = backup.pelanggan;
+    tagihan = backup.tagihan;
+    savePelanggan();
+    saveTagihan();
+    renderAll();
+    showToast('Gagal hapus pelanggan di Google Sheet. Data lokal dikembalikan.');
+    return;
+  }
+
+  await refreshAllDataFromSheet({ force: true, silent: true });
+  showToast('Pelanggan berhasil dihapus dan tersinkron.');
+}
+
+// Override beberapa aksi lokal yang sebelumnya belum selalu push ke Sheet.
+async function hapusPaket(id) {
+  const item = paket.find((row) => row.id === id);
+  if (!item) return;
+  const dipakai = pelanggan.some((customer) => customer.paket === item.speed || customer.packageId === item.id);
+  if (dipakai) return alert('Paket ini masih dipakai pelanggan. Ganti paket pelanggan dulu sebelum dihapus.');
+  if (!confirm(`Hapus paket ${item.nama || item.name}?`)) return;
+  const backup = [...paket];
+  paket = paket.filter((row) => row.id !== id);
+  savePaket();
+  renderAll();
+  const result = await syncAllToGoogleSheet({ silent: true, force: true });
+  if (!result.ok) {
+    paket = backup;
+    savePaket();
+    renderAll();
+    showToast('Gagal hapus paket di Google Sheet.');
+    return;
+  }
+  showToast('Paket berhasil dihapus dan tersinkron.');
+}
+
+async function hapusInvoice(id) {
+  const invoice = tagihan.find((row) => row.id === id);
+  if (!invoice) return;
+  const sudahDibayar = pembayaran.some((row) => row.invoiceId === id);
+  if (sudahDibayar) return alert('Tagihan ini sudah memiliki pembayaran, tidak bisa dihapus.');
+  if (!confirm(`Hapus tagihan ${invoice.nomor || ''}?`)) return;
+  const backup = [...tagihan];
+  tagihan = tagihan.filter((row) => row.id !== id);
+  saveTagihan();
+  renderAll();
+  const result = await syncAllToGoogleSheet({ silent: true, force: true });
+  if (!result.ok) {
+    tagihan = backup;
+    saveTagihan();
+    renderAll();
+    showToast('Gagal hapus tagihan di Google Sheet.');
+    return;
+  }
+  showToast('Tagihan berhasil dihapus dan tersinkron.');
+}
+
+async function tandaiLunasTunggakan(id) {
+  const customer = pelanggan.find((item) => item.id === id);
+  if (!customer) return;
+  if (!confirm(`Tandai tunggakan ${customer.nama} sudah lunas tanpa menambah pemasukan?`)) return;
+  customer.tunggakan = 0;
+  customer.status = customer.needsActivation ? 'Isolir / Nonaktif' : 'Aktif';
+  savePelanggan();
+  renderAll();
+  await syncAllToGoogleSheet({ silent: true, force: true });
+  showToast('Tunggakan ditandai lunas dan tersinkron.');
+}
+
+async function hapusTunggakan(id) {
+  const customer = pelanggan.find((item) => item.id === id);
+  if (!customer) return;
+  if (!confirm(`Hapus catatan tunggakan ${customer.nama}?`)) return;
+  customer.tunggakan = 0;
+  if (String(customer.status || '').toLowerCase().includes('menunggak') || String(customer.status || '').toLowerCase().includes('sebagian')) {
+    customer.status = customer.needsActivation ? 'Isolir / Nonaktif' : 'Aktif';
+  }
+  savePelanggan();
+  renderAll();
+  await syncAllToGoogleSheet({ silent: true, force: true });
+  showToast('Catatan tunggakan dihapus dan tersinkron.');
+}
