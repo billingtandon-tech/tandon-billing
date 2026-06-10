@@ -86,3 +86,8 @@ Klik Simpan Pengaturan. Token akan disimpan ke sheet `Pengaturan` sehingga Apps 
 - Web tetap jalan di Netlify.
 - Command MikroTik langsung ke Apps Script, bukan ke `/.netlify/functions/mikrotik`.
 - Jika token di menu Pengaturan diubah, token di script MikroTik juga harus disamakan.
+
+
+## Catatan Fix Pelanggan
+
+Versi ini memperbaiki alur tambah/edit pelanggan: setelah tombol Simpan ditekan, data tetap disimpan lokal dan otomatis dikirim ke Google Sheet memakai URL Apps Script yang diisi di menu Pengaturan. Jika URL belum benar, aplikasi akan memberi toast bahwa data masih lokal dan bisa dikirim manual lewat tombol Kirim ke Sheet.

@@ -622,6 +622,14 @@ customerForm?.addEventListener('submit', async (event) => {
   closeCustomer();
   renderAll();
   goToPage('pelanggan');
+
+  // Setelah tambah/edit pelanggan, langsung sinkron ke Google Sheet jika URL Apps Script sudah diisi.
+  const syncResult = await syncAllToGoogleSheet({ silent: true });
+  if (syncResult.ok) {
+    showToast('Pelanggan berhasil disimpan ke Google Sheet');
+  } else {
+    showToast('Pelanggan tersimpan lokal. Cek URL Apps Script, lalu klik Kirim ke Sheet.');
+  }
 });
 
 function openCustomer(customer = null) {
@@ -3526,15 +3534,11 @@ document.addEventListener('visibilitychange', () => {
 });
 
 /* GOOGLE SHEET SYNC */
-async function pushToGoogleSheet() {
+async function syncAllToGoogleSheet(options = {}) {
   const endpoint = settings.appsScriptUrl;
   if (!endpoint) {
-    goToPage('pengaturan');
-    alert('Isi dulu URL Google Apps Script di menu Pengaturan.');
-    return;
+    return { ok: false, message: 'URL Google Apps Script belum diisi' };
   }
-
-  setSyncLoading(true);
 
   try {
     const payload = {
@@ -3557,11 +3561,26 @@ async function pushToGoogleSheet() {
 
     const result = await postToAppsScript(endpoint, payload);
     if (!result.ok) throw new Error(result.message || 'Gagal menyimpan data');
-
-    showToast('Data berhasil dikirim ke Google Sheet');
+    if (!options.silent) showToast('Data berhasil dikirim ke Google Sheet');
+    return result;
   } catch (error) {
     console.error(error);
-    alert(`Gagal kirim ke Google Sheet: ${error.message}`);
+    if (!options.silent) alert(`Gagal kirim ke Google Sheet: ${error.message}`);
+    return { ok: false, message: error.message };
+  }
+}
+
+async function pushToGoogleSheet() {
+  if (!settings.appsScriptUrl) {
+    goToPage('pengaturan');
+    alert('Isi dulu URL Google Apps Script di menu Pengaturan.');
+    return;
+  }
+
+  setSyncLoading(true);
+
+  try {
+    await syncAllToGoogleSheet({ silent: false });
   } finally {
     setSyncLoading(false);
   }
