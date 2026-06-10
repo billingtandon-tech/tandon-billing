@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tandon Network - Billing ISP</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <section id="loginPage" class="login-page">
+      <div class="login-orb orb-a"></div>
+      <div class="login-orb orb-b"></div>
+
+      <div class="login-card">
+        <div class="login-logo">TN</div>
+        <h1>Tandon Network</h1>
+        <p>Billing Hybrid Prabayar & Pascabayar</p>
+
+        <form id="loginForm" class="login-form">
+          <label>Username</label>
+          <input id="username" type="text" placeholder="Masukkan username" autocomplete="username" required />
+
+          <label>Password</label>
+          <input id="password" type="password" placeholder="Masukkan password" autocomplete="current-password" required />
+
+          <button type="submit">Login</button>
+          <small>Login mengikuti sheet <b>UserLogin</b>. Default awal: admin / admin.</small>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboardPage" class="dashboard-page hidden">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-icon">TN</div>
+          <div>
+            <h2>Tandon Network</h2>
+            <span>ISP Billing</span>
+          </div>
+        </div>
+
+        <nav class="menu">
+          <p>UTAMA</p>
+          <button class="menu-item active" data-page="dashboard"><span>⌂</span> Dashboard</button>
+          <button class="menu-item" data-page="pelanggan"><span>👥</span> Data Pelanggan</button>
+          <button class="menu-item" data-page="paket"><span>⚡</span> Paket Internet</button>
+
+          <p>BILLING HYBRID</p>
+          <button class="menu-item" data-page="prabayar"><span>⏳</span> Prabayar</button>
+          <button class="menu-item" data-page="pascabayar"><span>📆</span> Pascabayar</button>
+          <button class="menu-item" data-page="tunggakan"><span>🧾</span> Tunggakan</button>
+
+
+          <p>KEUANGAN</p>
+          <button class="menu-item" data-page="pengeluaran"><span>🛒</span> Pengeluaran</button>
+          <button class="menu-item" data-page="rekening"><span>🏦</span> Bank & Tunai</button>
+          <button class="menu-item" data-page="aset"><span>🧰</span> Aset</button>
+          <button class="menu-item" data-page="laporan"><span>📊</span> Laporan</button>
+          <button class="menu-item" data-page="pengaturan"><span>⚙️</span> Pengaturan</button>
+        </nav>
+
+        <div class="sidebar-user split-user">
+          <div class="sidebar-admin-info">
+            <div class="avatar">AD</div>
+            <div class="user-text">
+              <b>Administrator</b>
+              <span>Admin</span>
+            </div>
+          </div>
+          <button id="logoutBtn" class="logout-icon-btn" title="Logout" aria-label="Logout">⛔</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="mobile-topbar">
+          <button id="toggleSidebar">☰</button>
+          <b>Tandon Network</b>
+          <div class="avatar small">AD</div>
+        </header>
+
+        <section class="page-section active" id="page-dashboard">
+          <div class="dashboard-title">
+            <div>
+              <h1>Dashboard</h1>
+              <p>Ringkasan billing hybrid prabayar, pascabayar, dan status MikroTik.</p>
+            </div>
+
+            <div class="admin-pill">
+              <div class="avatar small">AD</div>
+              <div>
+                <b>Administrator</b>
+                <span>Admin</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <article class="stat-card blue">
+              <div class="stat-top">
+                <div class="stat-icon">👥</div>
+                <span>Pelanggan Aktif</span>
+              </div>
+              <strong id="statAktif">0</strong>
+            </article>
+
+            <article class="stat-card violet">
+              <div class="stat-top">
+                <div class="stat-icon">⏳</div>
+                <span>Prabayar Aktif</span>
+              </div>
+              <strong id="statPrabayar">0</strong>
+            </article>
+
+            <article class="stat-card cyan">
+              <div class="stat-top">
+                <div class="stat-icon">📆</div>
+                <span>Pascabayar Aktif</span>
+              </div>
+              <strong id="statPascabayar">0</strong>
+            </article>
+
+            <article class="stat-card orange">
+              <div class="stat-top">
+                <div class="stat-icon">🚫</div>
+                <span>Pelanggan Isolir</span>
+              </div>
+              <strong id="statIsolir">0</strong>
+            </article>
+
+            <article class="stat-card red">
+              <div class="stat-top">
+                <div class="stat-icon">⚠</div>
+                <span>Tempo / Expired</span>
+              </div>
+              <strong id="statTempo">0</strong>
+            </article>
+
+            <article class="stat-card green">
+              <div class="stat-top">
+                <div class="stat-icon">💵</div>
+                <span>Total Tunggakan</span>
+              </div>
+              <strong class="money" id="statTotalTunggakan">Rp 0</strong>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel finance-panel">
+              <div class="panel-head">
+                <h2>Aktivitas Keuangan Bulan Ini</h2>
+                <p>Ringkasan pemasukan, pengeluaran, dan laba/rugi.</p>
+              </div>
+
+              <div class="finance-row">
+                <div class="finance-icon income">↑</div>
+                <div class="finance-info">
+                  <span>Total Pemasukan</span>
+                  <strong id="dashIncome">Rp 0</strong>
+                  <div class="badges">
+                    <b id="dashIncomePrepaid">Prabayar: Rp 0</b>
+                    <b id="dashIncomePostpaid">Pascabayar: Rp 0</b>
+                  </div>
+                </div>
+              </div>
+
+              <div class="finance-row">
+                <div class="finance-icon expense">↓</div>
+                <div class="finance-info">
+                  <span>Pengeluaran Bulan Ini</span>
+                  <strong id="dashExpense">Rp 0</strong>
+                </div>
+              </div>
+
+              <div class="finance-row">
+                <div class="finance-icon profit">⚖</div>
+                <div class="finance-info">
+                  <span>Laba/Rugi Bulan Ini</span>
+                  <strong class="profit-text" id="dashProfit">Rp 0</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel balance-panel">
+              <div class="balance-shape"></div>
+              <div class="balance-top">
+                <div class="wallet">▣</div>
+                <div class="balance-text">
+                  <span>Total Saldo Kas Keseluruhan</span>
+                  <strong id="dashBalance">Rp 0</strong>
+                  <div class="balance-methods" id="dashBalanceBreakdown">
+                    <span>BRI = Rp 0</span>
+                    <span>DANA = Rp 0</span>
+                    <span>Tunai = Rp 0</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="asset-compare-card">
+                <div class="asset-compare-head">
+                  <span>Perbandingan Aset & Kas</span>
+                  <b id="dashRecoveryStatus">Masih merintis</b>
+                </div>
+                <div class="asset-compare-grid">
+                  <div>
+                    <small>Total Aset</small>
+                    <strong id="dashAssetTotal">Rp 0</strong>
+                  </div>
+                  <div>
+                    <small>Kas Saat Ini</small>
+                    <strong id="dashCashTotal">Rp 0</strong>
+                  </div>
+                  <div>
+                    <small>Progress Pulih Modal</small>
+                    <strong id="dashRecoveryPercent">0%</strong>
+                  </div>
+                </div>
+                <div class="asset-progress">
+                  <i id="dashRecoveryBar"></i>
+                </div>
+                <p id="dashRecoveryNote">Catat aset untuk melihat posisi kas terhadap modal aset.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-pelanggan">
+          <div class="section-head">
+            <div>
+              <h1>Data Pelanggan</h1>
+              <p>Kelola pelanggan prabayar dan pascabayar dalam satu sistem.</p>
+            </div>
+            <button class="primary-btn" id="openCustomerModal">+ Tambah Pelanggan</button>
+          </div>
+
+          <div class="customer-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchCustomer" placeholder="Cari nama, username, atau no WA..." />
+            </div>
+            <select id="filterBilling">
+              <option value="">Semua Tipe</option>
+              <option value="Prabayar">Prabayar</option>
+              <option value="Pascabayar">Pascabayar</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Username</th>
+                  <th>No WA</th>
+                  <th>Tipe</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="pelangganTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-paket">
+          <div class="section-head">
+            <div>
+              <h1>Paket Internet</h1>
+              <p>Daftar profile paket untuk MikroTik PPPoE.</p>
+            </div>
+            <button class="primary-btn" id="openPackageModal">+ Tambah Paket</button>
+          </div>
+          <div class="package-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchPackage" placeholder="Cari paket, harga, profile, atau kecepatan..." />
+            </div>
+          </div>
+          <div class="package-grid" id="paketGrid"></div>
+        </section>
+
+        <section class="page-section" id="page-prabayar">
+          <div class="section-head">
+            <div>
+              <h1>Prabayar</h1>
+              <p>Daftar pelanggan prabayar dan sisa masa aktif sebelum expired.</p>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="prepaid-summary">
+            <article class="mini-summary-card">
+              <span>Total Prabayar</span>
+              <strong id="prepaidTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Masih Aktif</span>
+              <strong id="prepaidActiveTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Expired / Isolir</span>
+              <strong id="prepaidExpiredTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Akan Expired ≤ 3 Hari</span>
+              <strong id="prepaidSoonTotal">0</strong>
+            </article>
+          </div>
+
+          <div class="customer-toolbar invoice-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchPrepaid" placeholder="Cari nama, username, atau status..." />
+            </div>
+            <select id="filterPrepaidStatus">
+              <option value="">Semua Status</option>
+              <option value="Aktif">Aktif</option>
+              <option value="Expired">Expired</option>
+              <option value="Isolir">Isolir</option>
+              <option value="Nonaktif">Nonaktif</option>
+              <option value="Menunggak">Menunggak</option>
+              <option value="Bayar Sebagian">Bayar Sebagian</option>
+            </select>
+            <select id="filterPrepaidDays">
+              <option value="">Semua Masa Aktif</option>
+              <option value="expired">Sudah Expired</option>
+              <option value="soon">Sisa ≤ 3 Hari</option>
+              <option value="active">Masih Aktif</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Username PPPoE</th>
+                  <th>Paket</th>
+                  <th>Tanggal Aktif</th>
+                  <th>Expired / Tempo</th>
+                  <th>Sisa Aktif</th>
+                  <th>Sisa Tunggakan</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="prepaidTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-tunggakan">
+          <div class="section-head">
+            <div>
+              <h1>Tunggakan</h1>
+              <p>Rekap pelanggan yang belum bayar penuh, bayar sebagian, atau perlu ditagih ulang.</p>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="prepaid-summary">
+            <article class="mini-summary-card">
+              <span>Total Tunggakan</span>
+              <strong id="debtTotalCount">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Belum Bayar</span>
+              <strong id="debtUnpaidCount">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Bayar Sebagian</span>
+              <strong id="debtPartialCount">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Nominal Tunggakan</span>
+              <strong id="debtTotalAmount">Rp 0</strong>
+            </article>
+          </div>
+
+          <div class="customer-toolbar invoice-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchDebt" placeholder="Cari nama, username, tipe billing, atau status..." />
+            </div>
+            <select id="filterDebtType">
+              <option value="">Semua Tipe</option>
+              <option value="Prabayar">Prabayar</option>
+              <option value="Pascabayar">Pascabayar</option>
+            </select>
+            <select id="filterDebtStatus">
+              <option value="">Semua Status</option>
+              <option value="Menunggak">Menunggak</option>
+              <option value="Bayar Sebagian">Bayar Sebagian</option>
+              <option value="Belum Bayar">Belum Bayar</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Username PPPoE</th>
+                  <th>Tipe Billing</th>
+                  <th>Paket / Keterangan</th>
+                  <th>Total Tagihan</th>
+                  <th>Sudah Dibayar</th>
+                  <th>Sisa Tunggakan</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="debtTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-pascabayar">
+          <div class="section-head">
+            <div>
+              <h1>Pascabayar</h1>
+              <p>Pelanggan aktif dulu, tagihan muncul bulanan, lalu menunggak jika lewat jatuh tempo.</p>
+            </div>
+            <div></div>
+          </div>
+
+          <div class="prepaid-summary">
+            <article class="mini-summary-card">
+              <span>Total Pascabayar</span>
+              <strong id="postpaidTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Aktif</span>
+              <strong id="postpaidActiveTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Isolir / Nonaktif</span>
+              <strong id="postpaidBlockedTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Command Pending</span>
+              <strong id="postpaidCommandPending">0</strong>
+            </article>
+          </div>
+
+          <div class="customer-toolbar payment-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchPostpaid" placeholder="Cari nama, username, paket, status, atau tempo..." />
+            </div>
+            <select id="filterPostpaidStatus">
+              <option value="">Semua Status</option>
+              <option value="Aktif">Aktif</option>
+              <option value="Isolir">Isolir</option>
+              <option value="Nonaktif">Nonaktif</option>
+              <option value="Menunggak">Menunggak</option>
+              <option value="Bayar Sebagian">Bayar Sebagian</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>Username PPPoE</th>
+                  <th>Paket</th>
+                  <th>Tanggal Aktif</th>
+                  <th>Jatuh Tempo</th>
+                  <th>Sisa Tempo</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="postpaidTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page-section" id="page-tagihan">
+          <div class="section-head">
+            <div>
+              <h1>Tagihan</h1>
+              <p>Kelola tagihan pascabayar dan perpanjangan prabayar.</p>
+            </div>
+            <button class="primary-btn" id="openInvoiceModal">+ Buat Tagihan</button>
+          </div>
+
+          <div class="customer-toolbar invoice-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchInvoice" placeholder="Cari pelanggan, invoice, tipe, atau status..." />
+            </div>
+            <select id="filterInvoiceStatus">
+              <option value="">Semua Status</option>
+              <option value="Belum Bayar">Belum Bayar</option>
+              <option value="Lunas">Lunas</option>
+            </select>
+            <select id="filterInvoiceType">
+              <option value="">Semua Tipe</option>
+              <option value="Prabayar">Prabayar</option>
+              <option value="Pascabayar">Pascabayar</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>No Invoice</th>
+                  <th>Pelanggan</th>
+                  <th>Tipe</th>
+                  <th>Periode</th>
+                  <th>Jatuh Tempo</th>
+                  <th>Jumlah</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="invoiceTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page-section" id="page-pembayaran">
+          <div class="section-head">
+            <div>
+              <h1>Pembayaran</h1>
+              <p>Riwayat pembayaran tunai dan transfer dari tagihan pelanggan.</p>
+            </div>
+          </div>
+
+          <div class="customer-toolbar payment-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchPayment" placeholder="Cari pelanggan, invoice, metode, atau tanggal..." />
+            </div>
+            <select id="filterPaymentMethod">
+              <option value="">Semua Metode</option>
+              <option value="Tunai">Tunai</option>
+              <option value="Transfer BRI">Transfer BRI</option>
+              <option value="Transfer E-Wallet DANA">Transfer E-Wallet DANA</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>No Invoice</th>
+                  <th>Pelanggan</th>
+                  <th>Tipe</th>
+                  <th>Jumlah</th>
+                  <th>Metode</th>
+                  <th>Keterangan</th>
+                </tr>
+              </thead>
+              <tbody id="paymentTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page-section" id="page-pengeluaran">
+          <div class="section-head">
+            <div>
+              <h1>Pengeluaran</h1>
+              <p>Catatan biaya operasional jaringan, alat, listrik, sewa, dan kebutuhan lain.</p>
+            </div>
+            <button class="primary-btn" id="openExpenseModal">+ Tambah Pengeluaran</button>
+          </div>
+
+          <div class="expense-summary">
+            <article class="mini-summary-card">
+              <span>Total Pengeluaran Bulan Ini</span>
+              <strong id="expenseMonthTotal">Rp 0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Total Semua Pengeluaran</span>
+              <strong id="expenseAllTotal">Rp 0</strong>
+            </article>
+          </div>
+
+          <div class="customer-toolbar payment-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchExpense" placeholder="Cari tanggal, kategori, deskripsi, atau metode..." />
+            </div>
+            <select id="filterExpenseCategory">
+              <option value="">Semua Kategori</option>
+              <option value="Internet / Bandwidth">Internet / Bandwidth</option>
+              <option value="Listrik">Listrik</option>
+              <option value="Alat Jaringan">Alat Jaringan</option>
+              <option value="Sewa">Sewa</option>
+              <option value="Transport">Transport</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Kategori</th>
+                  <th>Deskripsi</th>
+                  <th>Jumlah</th>
+                  <th>Metode</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="expenseTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page-section" id="page-rekening">
+          <div class="section-head">
+            <div>
+              <h1>Bank & Tunai</h1>
+              <p>Atur metode penyimpanan uang seperti Tunai, BRI, DANA, BCA, QRIS, dan lainnya secara custom.</p>
+            </div>
+            <div class="section-actions">
+              <button class="secondary-btn" id="openCashAdjustModal">⚖️ Penyesuaian Kas</button>
+              <button class="primary-btn" id="openCashAccountModal">+ Tambah Bank / Tunai</button>
+            </div>
+          </div>
+
+          <div class="expense-summary" id="cashAccountSummary"></div>
+
+          <div class="customer-toolbar payment-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchCashAccount" placeholder="Cari bank, tunai, e-wallet, atau catatan..." />
+            </div>
+            <select id="filterCashAccountType">
+              <option value="">Semua Jenis</option>
+              <option value="Tunai">Tunai</option>
+              <option value="Bank">Bank</option>
+              <option value="E-Wallet">E-Wallet</option>
+              <option value="QRIS">QRIS</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nama</th>
+                  <th>Jenis</th>
+                  <th>Pemilik / Nomor</th>
+                  <th>Saldo Terhitung</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="cashAccountTable"></tbody>
+            </table>
+          </div>
+
+          <div class="panel table-panel cash-adjust-panel">
+            <div class="panel-title-row">
+              <div>
+                <h3>Riwayat Penyesuaian Kas</h3>
+                <p>Untuk input kas awal sebelum aplikasi dipakai atau koreksi saldo bank/tunai.</p>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Metode</th>
+                  <th>Tipe</th>
+                  <th>Nominal</th>
+                  <th>Input</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="cashAdjustTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page-section" id="page-aset">
+          <div class="section-head">
+            <div>
+              <h1>Aset</h1>
+              <p>Catat semua aset/peralatan RT/RW Net yang sudah dibeli dan total nilainya.</p>
+            </div>
+            <button class="primary-btn" id="openAssetModal">+ Tambah Aset</button>
+          </div>
+
+          <div class="expense-summary">
+            <article class="mini-summary-card">
+              <span>Total Nilai Aset</span>
+              <strong id="assetTotalValue">Rp 0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Jumlah Unit</span>
+              <strong id="assetTotalUnit">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Aset Baik</span>
+              <strong id="assetGoodTotal">0</strong>
+            </article>
+            <article class="mini-summary-card">
+              <span>Aset Rusak</span>
+              <strong id="assetBrokenTotal">0</strong>
+            </article>
+          </div>
+
+          <div class="customer-toolbar payment-toolbar">
+            <div class="search-box">
+              <span>🔎</span>
+              <input type="search" id="searchAsset" placeholder="Cari nama aset, kategori, kondisi, lokasi, atau catatan..." />
+            </div>
+            <select id="filterAssetCategory">
+              <option value="">Semua Kategori</option>
+              <option value="MikroTik">MikroTik</option>
+              <option value="Router / Switch">Router / Switch</option>
+              <option value="ONT / ONU">ONT / ONU</option>
+              <option value="Kabel">Kabel</option>
+              <option value="Alat Kerja">Alat Kerja</option>
+              <option value="Listrik / UPS">Listrik / UPS</option>
+              <option value="Perlengkapan Jaringan">Perlengkapan Jaringan</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+
+          <div class="panel table-panel">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tanggal Beli</th>
+                  <th>Nama Aset</th>
+                  <th>Kategori</th>
+                  <th>Jumlah</th>
+                  <th>Harga Satuan</th>
+                  <th>Total</th>
+                  <th>Kondisi</th>
+                  <th>Lokasi</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="assetTable"></tbody>
+            </table>
+          </div>
+        </section>
+        <section class="page-section" id="page-laporan">
+          <div class="section-head">
+            <div>
+              <h1>Laporan</h1>
+              <p>Laporan ringkas, rapi, dan siap cetak untuk keuangan, tunggakan, aset, serta posisi usaha.</p>
+            </div>
+            <button class="primary-btn" id="printReportBtn">🖨 Cetak Laporan</button>
+          </div>
+
+          <div class="report-filter">
+            <label>
+              Jenis Laporan
+              <select id="reportType">
+                <option value="ringkasan">Ringkasan Usaha</option>
+                <option value="keuangan">Laporan Keuangan</option>
+                <option value="tunggakan">Laporan Tunggakan</option>
+                <option value="aset">Laporan Aset</option>
+              </select>
+            </label>
+
+            <label>
+              Dari Tanggal
+              <input type="date" id="reportStartDate" />
+            </label>
+
+            <label>
+              Sampai Tanggal
+              <input type="date" id="reportEndDate" />
+            </label>
+
+            <button class="secondary-btn" id="refreshReportBtn">Tampilkan</button>
+          </div>
+
+          <div id="reportPreview" class="report-preview"></div>
+        </section>
+        <section class="page-section" id="page-pengaturan">
+          <div class="section-head">
+            <div>
+              <h1>Pengaturan</h1>
+              <p>Atur data usaha, admin, tanggal tempo, dan endpoint koneksi server.</p>
+            </div>
+            <button class="primary-btn" id="saveSettingsTopBtn">Simpan Pengaturan</button>
+          </div>
+
+          <div class="settings-grid">
+            <article class="panel settings-card">
+              <div class="panel-head">
+                <h2>Identitas Usaha</h2>
+                <p>Data ini dipakai untuk laporan dan tampilan aplikasi.</p>
+              </div>
+
+              <form id="settingsForm" class="settings-form">
+                <label>
+                  Nama Usaha
+                  <input id="settingBusinessName" type="text" placeholder="Contoh: Tandon Network" />
+                </label>
+
+                <label>
+                  Alamat Usaha
+                  <textarea id="settingBusinessAddress" rows="3" placeholder="Alamat RT/RW Net"></textarea>
+                </label>
+
+                <label>
+                  Nomor Admin / WhatsApp
+                  <input id="settingAdminPhone" type="tel" placeholder="Contoh: 08xxxxxxxxxx" />
+                </label>
+
+                <label>
+                  Nama Admin / Operator
+                  <input id="settingAdminName" type="text" placeholder="Contoh: Administrator" />
+                </label>
+
+                <label>
+                  Username Login Admin
+                  <input id="settingLoginUsername" type="text" placeholder="Contoh: operator_tandon" autocomplete="off" />
+                </label>
+
+                <label>
+                  Password Login Admin
+                  <input id="settingLoginPassword" type="password" placeholder="Isi password baru yang sulit ditebak" autocomplete="new-password" />
+                </label>
+
+                <small class="setting-help">Saat pengaturan disimpan, username dan password juga disimpan ke sheet <b>UserLogin</b>.</small>
+
+                <div class="settings-actions">
+                  <button type="submit" class="primary-btn">Simpan Pengaturan</button>
+                  <button type="button" class="secondary-btn" id="resetSettingsBtn">Reset</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="panel settings-card connection-settings-card">
+              <div class="panel-head">
+                <h2>Koneksi Backend & MikroTik</h2>
+                <p>Web tetap di Netlify. Backend dan command MikroTik langsung memakai Google Apps Script.</p>
+              </div>
+
+              <div class="settings-form connection-form">
+                <label>
+                  URL Google Apps Script Web App
+                  <input id="settingAppsScriptUrl" type="url" placeholder="https://script.google.com/macros/s/xxxxx/exec" />
+                </label>
+
+                <label>
+                  Token MikroTik
+                  <input id="settingMikrotikToken" type="text" placeholder="Contoh: TANDON12345" autocomplete="off" />
+                </label>
+
+                <small class="setting-help">Token ini dipakai script RouterOS saat ambil command langsung ke Apps Script. Tidak perlu Netlify Function lagi.</small>
+
+                <label>
+                  Nama Router
+                  <input id="settingRouterName" type="text" placeholder="Contoh: Router Utama" />
+                </label>
+
+                <label>
+                  Catatan Koneksi
+                  <input id="settingConnectionNote" type="text" placeholder="Contoh: Scheduler ambil command tiap 1 menit" />
+                </label>
+              </div>
+
+              <div class="connection-status">
+                <div>
+                  <span>Status Google Sheet</span>
+                  <strong id="sheetStatus">Belum disambungkan</strong>
+                </div>
+                <div>
+                  <span>Status Token MikroTik</span>
+                  <strong id="mikrotikStatus">Belum disambungkan</strong>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel settings-card wide">
+              <div class="panel-head">
+                <h2>Template WhatsApp</h2>
+                <p>Kalimat WA bisa diubah tanpa bongkar kode. Variabel: <b>{nama}</b>, <b>{username}</b>, <b>{expired}</b>, <b>{aktif}</b>, <b>{sudahDibayar}</b>, <b>{sisaTunggakan}</b>, <b>{usaha}</b>, <b>{paket}</b>, <b>{jumlah}</b>, <b>{metode}</b>, <b>{tempo}</b>.</p>
+              </div>
+
+              <div class="wa-template-tabs" role="tablist" aria-label="Pilihan Template WhatsApp">
+                <button type="button" class="wa-template-tab active" data-template-panel="waTplH1">WA Prabayar H-1</button>
+                <button type="button" class="wa-template-tab" data-template-panel="waTplAktif">WA Internet Aktif</button>
+                <button type="button" class="wa-template-tab" data-template-panel="waTplTunggakan">WA Tunggakan</button>
+                <button type="button" class="wa-template-tab" data-template-panel="waTplPascabayar">WA Pascabayar</button>
+              </div>
+
+              <div class="wa-template-panels">
+                <div class="wa-template-panel active" id="waTplH1">
+                  <label>
+                    WA Prabayar H-1
+                    <textarea id="settingWaTemplateH1" rows="9" placeholder="Template notifikasi masa aktif hampir habis"></textarea>
+                  </label>
+                </div>
+
+                <div class="wa-template-panel" id="waTplAktif">
+                  <label>
+                    WA Internet Aktif Setelah Bayar
+                    <textarea id="settingWaTemplateAktif" rows="9" placeholder="Template info internet aktif setelah pembayaran"></textarea>
+                  </label>
+                </div>
+
+                <div class="wa-template-panel" id="waTplTunggakan">
+                  <label>
+                    WA Tunggakan
+                    <textarea id="settingWaTemplateTunggakan" rows="9" placeholder="Template penagihan tunggakan"></textarea>
+                  </label>
+                </div>
+
+                <div class="wa-template-panel" id="waTplPascabayar">
+                  <label>
+                    WA Pascabayar
+                    <textarea id="settingWaTemplatePascabayar" rows="9" placeholder="Template notifikasi tagihan pascabayar"></textarea>
+                  </label>
+                </div>
+              </div>
+
+              <div class="wa-template-actions">
+                <button type="button" class="secondary-btn" id="resetWaTemplateBtn">Reset Template WA</button>
+                <button type="button" class="primary-btn" id="saveWaTemplateBtn">Simpan Template WA</button>
+              </div>
+            </article>
+
+
+
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="customerModal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h2 id="customerModalTitle">Tambah Pelanggan</h2>
+          <p>Isi data pelanggan untuk billing hybrid Tandon Network.</p>
+        </div>
+        <button class="icon-btn" id="closeCustomerModal">×</button>
+      </div>
+
+      <form id="customerForm" class="customer-form">
+        <input type="hidden" id="customerId" />
+
+        <div class="form-grid">
+          <label>
+            Nama Pelanggan
+            <input id="customerName" type="text" placeholder="Contoh: Budi Santoso" required />
+          </label>
+
+          <label>
+            No HP / WhatsApp
+            <input id="customerPhone" type="tel" placeholder="Contoh: 08xxxxxxxxxx" />
+          </label>
+
+          <label>
+            Username PPPoE
+            <input id="customerUsername" type="text" placeholder="Contoh: budi01" required />
+          </label>
+
+          <label>
+            Password PPPoE
+            <input id="customerPassword" type="text" placeholder="Contoh: 12345" required />
+          </label>
+
+          <label>
+            Tipe Billing
+            <select id="customerBilling" required>
+              <option value="Prabayar">Prabayar</option>
+              <option value="Pascabayar">Pascabayar</option>
+            </select>
+          </label>
+
+
+          <input id="customerActiveDate" type="hidden" />
+
+          <label>
+            Status
+            <select id="customerStatus" required>
+              <option value="Expire">Expire</option>
+              <option value="Aktif">Aktif</option>
+              <option value="Nonaktif">Nonaktif</option>
+              <option value="Menunggak">Menunggak</option>
+              <option value="Bayar Sebagian">Bayar Sebagian</option>
+            </select>
+          </label>
+
+          <input id="customerDueDate" type="hidden" />
+
+          <label class="full">
+            Alamat
+            <textarea id="customerAddress" rows="3" placeholder="Alamat pelanggan"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelCustomer">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Pelanggan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <div class="modal-backdrop hidden" id="packageModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="packageModalTitle">Tambah Paket Internet</h2>
+          <p>Isi paket internet untuk pilihan pelanggan dan profile MikroTik.</p>
+        </div>
+        <button class="icon-btn" id="closePackageModal">×</button>
+      </div>
+
+      <form id="packageForm" class="customer-form">
+        <input type="hidden" id="packageId" />
+
+        <div class="form-grid">
+          <label>
+            Nama Paket
+            <input id="packageName" type="text" placeholder="Contoh: PAKET_10M" required />
+          </label>
+
+          <label>
+            Harga Bulanan
+            <input id="packagePrice" type="number" placeholder="Contoh: 150000" required />
+          </label>
+
+          <label>
+            Kecepatan
+            <input id="packageSpeed" type="text" placeholder="Contoh: 10 Mbps" required />
+          </label>
+
+          <label>
+            Profile MikroTik
+            <input id="packageProfile" type="text" placeholder="Contoh: profile-10M" required />
+          </label>
+
+          <label>
+            Tipe Billing
+            <select id="packageBilling" required>
+              <option value="Prabayar / Pascabayar">Prabayar / Pascabayar</option>
+              <option value="Prabayar">Prabayar</option>
+              <option value="Pascabayar">Pascabayar</option>
+            </select>
+          </label>
+
+          <label class="full">
+            Keterangan
+            <textarea id="packageNote" rows="3" placeholder="Contoh: Paket rumahan standar"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelPackage">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Paket</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div class="modal-backdrop hidden" id="invoiceModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="invoiceModalTitle">Buat Tagihan</h2>
+          <p>Buat tagihan untuk pelanggan prabayar atau pascabayar.</p>
+        </div>
+        <button class="icon-btn" id="closeInvoiceModal">×</button>
+      </div>
+
+      <form id="invoiceForm" class="customer-form">
+        <input type="hidden" id="invoiceId" />
+
+        <div class="form-grid">
+          <label class="full">
+            Pelanggan
+            <select id="invoiceCustomer" required></select>
+          </label>
+
+          <label>
+            Tipe Billing
+            <input id="invoiceType" type="text" readonly />
+          </label>
+
+          <label>
+            Jumlah Tagihan
+            <input id="invoiceAmount" type="number" placeholder="Contoh: 150000" required />
+          </label>
+
+          <label>
+            Periode
+            <input id="invoicePeriod" type="month" required />
+          </label>
+
+          <label>
+            Jatuh Tempo
+            <input id="invoiceDueDate" type="date" required />
+          </label>
+
+          <label>
+            Status
+            <select id="invoiceStatus" required>
+              <option value="Belum Bayar">Belum Bayar</option>
+              <option value="Lunas">Lunas</option>
+            </select>
+          </label>
+
+          <label class="full">
+            Keterangan
+            <textarea id="invoiceNote" rows="3" placeholder="Contoh: Tagihan internet bulan ini"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelInvoice">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Tagihan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div class="modal-backdrop hidden" id="prepaidDebtModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="prepaidDebtTitle">Pembayaran Prabayar</h2>
+          <p id="prepaidDebtSubtitle">Catat pembayaran atau tunggakan pelanggan prabayar.</p>
+        </div>
+        <button class="icon-btn" id="closePrepaidDebtModal">×</button>
+      </div>
+
+      <form id="prepaidDebtForm" class="customer-form">
+        <input type="hidden" id="prepaidDebtCustomerId" />
+        <input type="hidden" id="prepaidDebtMode" />
+
+        <div class="payment-summary" id="prepaidDebtSummary"></div>
+
+        <div class="form-grid">
+          <label>
+            Tanggal
+            <input id="prepaidDebtDate" type="date" required />
+          </label>
+
+          <label>
+            Nominal
+            <input id="prepaidDebtAmount" type="number" min="0" required />
+          </label>
+
+          <label>
+            Metode Pembayaran
+            <select id="prepaidDebtMethod" required>
+              <option value="Tunai">Tunai</option>
+              <option value="Transfer BRI">Transfer BRI</option>
+              <option value="Transfer E-Wallet DANA">Transfer E-Wallet DANA</option>
+            </select>
+          </label>
+
+          <label class="full">
+            Catatan
+            <textarea id="prepaidDebtNote" rows="3" placeholder="Contoh: Bayar sebagian / catat tunggakan"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelPrepaidDebt">Batal</button>
+          <button type="submit" class="primary-btn" id="savePrepaidDebtBtn">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="paymentModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2>Bayar Tagihan</h2>
+          <p>Konfirmasi pembayaran tagihan pelanggan.</p>
+        </div>
+        <button class="icon-btn" id="closePaymentModal">×</button>
+      </div>
+
+      <form id="paymentForm" class="customer-form">
+        <input type="hidden" id="paymentInvoiceId" />
+
+        <div class="payment-summary" id="paymentSummary"></div>
+
+        <div class="form-grid">
+          <label>
+            Tanggal Bayar
+            <input id="paymentDate" type="date" required />
+          </label>
+
+          <label>
+            Metode Pembayaran
+            <select id="paymentMethod" required>
+              <option value="Tunai">Tunai</option>
+              <option value="Transfer BRI">Transfer BRI</option>
+              <option value="Transfer E-Wallet DANA">Transfer E-Wallet DANA</option>
+            </select>
+          </label>
+
+          <label>
+            Jumlah Bayar
+            <input id="paymentAmount" type="number" required />
+          </label>
+
+          <label class="full">
+            Keterangan
+            <textarea id="paymentNote" rows="3" placeholder="Contoh: Dibayar via transfer BCA"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelPayment">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Pembayaran</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div class="modal-backdrop hidden" id="cashAdjustModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="cashAdjustModalTitle">Tambah Penyesuaian Kas</h2>
+          <p>Isi kas awal atau koreksi saldo tanpa dihitung sebagai pemasukan/pengeluaran transaksi.</p>
+        </div>
+        <button class="icon-btn" id="closeCashAdjustModal">×</button>
+      </div>
+
+      <form id="cashAdjustForm" class="customer-form">
+        <input type="hidden" id="cashAdjustId" />
+        <input type="hidden" id="cashAdjustCreatedAt" />
+        <div class="form-grid">
+          <label>
+            Tanggal
+            <input id="cashAdjustDate" type="date" required />
+          </label>
+          <label>
+            Metode Bank / Tunai
+            <select id="cashAdjustMethod" required></select>
+          </label>
+          <label>
+            Tipe Penyesuaian
+            <select id="cashAdjustType" required>
+              <option value="Tambah">Tambah Saldo</option>
+              <option value="Kurang">Kurangi Saldo</option>
+            </select>
+          </label>
+          <label>
+            Nominal
+            <input id="cashAdjustAmount" type="number" min="1" step="1" placeholder="Contoh: 500000" required />
+          </label>
+          <label class="full">
+            Catatan
+            <textarea id="cashAdjustNote" rows="3" placeholder="Contoh: Kas awal sebelum aplikasi dipakai"></textarea>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelCashAdjust">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Penyesuaian</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="cashAccountModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="cashAccountModalTitle">Tambah Bank / Tunai</h2>
+          <p>Nama yang aktif akan otomatis muncul di pilihan metode pembayaran.</p>
+        </div>
+        <button class="icon-btn" id="closeCashAccountModal">×</button>
+      </div>
+
+      <form id="cashAccountForm" class="customer-form">
+        <input type="hidden" id="cashAccountId" />
+        <div class="form-grid">
+          <label>
+            Nama Metode
+            <input id="cashAccountName" type="text" placeholder="Contoh: BRI, BCA, Tunai, DANA" required />
+          </label>
+          <label>
+            Jenis
+            <select id="cashAccountType" required>
+              <option value="Tunai">Tunai</option>
+              <option value="Bank">Bank</option>
+              <option value="E-Wallet">E-Wallet</option>
+              <option value="QRIS">QRIS</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </label>
+          <label>
+            Pemilik Rekening / Admin
+            <input id="cashAccountOwner" type="text" placeholder="Contoh: Tandon Network" />
+          </label>
+          <label>
+            Nomor Rekening / No E-Wallet
+            <input id="cashAccountNumber" type="text" placeholder="Opsional" />
+          </label>
+          <label>
+            Status
+            <select id="cashAccountStatus" required>
+              <option value="Aktif">Aktif</option>
+              <option value="Nonaktif">Nonaktif</option>
+            </select>
+          </label>
+          <label class="full">
+            Catatan
+            <textarea id="cashAccountNote" rows="3" placeholder="Contoh: Rekening utama untuk transfer pelanggan"></textarea>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelCashAccount">Batal</button>
+          <button type="submit" class="primary-btn">Simpan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="expenseModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="expenseModalTitle">Tambah Pengeluaran</h2>
+          <p>Catat pengeluaran operasional Tandon Network.</p>
+        </div>
+        <button class="icon-btn" id="closeExpenseModal">×</button>
+      </div>
+
+      <form id="expenseForm" class="customer-form">
+        <input type="hidden" id="expenseId" />
+
+        <div class="form-grid">
+          <label>
+            Tanggal
+            <input id="expenseDate" type="date" required />
+          </label>
+
+          <label>
+            Kategori
+            <select id="expenseCategory" required>
+              <option value="Internet / Bandwidth">Internet / Bandwidth</option>
+              <option value="Listrik">Listrik</option>
+              <option value="Alat Jaringan">Alat Jaringan</option>
+              <option value="Sewa">Sewa</option>
+              <option value="Transport">Transport</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </label>
+
+          <label>
+            Jumlah
+            <input id="expenseAmount" type="number" placeholder="Contoh: 500000" required />
+          </label>
+
+          <label>
+            Metode
+            <select id="expenseMethod" required>
+              <option value="Tunai">Tunai</option>
+              <option value="Transfer BRI">Transfer BRI</option>
+              <option value="Transfer E-Wallet DANA">Transfer E-Wallet DANA</option>
+              <option value="QRIS">QRIS</option>
+            </select>
+          </label>
+
+          <label class="full">
+            Deskripsi
+            <textarea id="expenseDescription" rows="3" placeholder="Contoh: Bayar bandwidth bulanan"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelExpense">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Pengeluaran</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div class="modal-backdrop hidden" id="assetModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="assetModalTitle">Tambah Aset</h2>
+          <p>Catat aset/peralatan jaringan yang sudah dibeli.</p>
+        </div>
+        <button class="icon-btn" id="closeAssetModal">×</button>
+      </div>
+
+      <form id="assetForm" class="customer-form">
+        <input type="hidden" id="assetId" />
+
+        <div class="form-grid">
+          <label>
+            Tanggal Beli
+            <input id="assetDate" type="date" required />
+          </label>
+
+          <label>
+            Nama Aset
+            <input id="assetName" type="text" placeholder="Contoh: MikroTik hEX" required />
+          </label>
+
+          <label>
+            Kategori
+            <select id="assetCategory" required>
+              <option value="MikroTik">MikroTik</option>
+              <option value="Router / Switch">Router / Switch</option>
+              <option value="ONT / ONU">ONT / ONU</option>
+              <option value="Kabel">Kabel</option>
+              <option value="Alat Kerja">Alat Kerja</option>
+              <option value="Listrik / UPS">Listrik / UPS</option>
+              <option value="Perlengkapan Jaringan">Perlengkapan Jaringan</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </label>
+
+          <label>
+            Kondisi
+            <select id="assetCondition" required>
+              <option value="Baik">Baik</option>
+              <option value="Terpakai">Terpakai</option>
+              <option value="Cadangan">Cadangan</option>
+              <option value="Rusak">Rusak</option>
+              <option value="Hilang">Hilang</option>
+            </select>
+          </label>
+
+          <label>
+            Jumlah Unit
+            <input id="assetQty" type="number" min="1" placeholder="Contoh: 1" required />
+          </label>
+
+          <label>
+            Harga Satuan
+            <input id="assetUnitPrice" type="number" min="0" placeholder="Contoh: 650000" required />
+          </label>
+
+          <label class="full">
+            Lokasi / Dipakai Untuk
+            <input id="assetLocation" type="text" placeholder="Contoh: Rumah pelanggan / Rak utama / Gudang" />
+          </label>
+
+          <label class="full">
+            Catatan
+            <textarea id="assetNote" rows="3" placeholder="Contoh: Dibeli dari toko jaringan, garansi 1 tahun"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelAsset">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Aset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+
+  <div class="modal-backdrop hidden" id="extendModal">
+    <div class="modal-card small-modal">
+      <div class="modal-head">
+        <div>
+          <h2>Perpanjang Masa Aktif</h2>
+          <p id="extendCustomerInfo">Pilih paket perpanjangan pelanggan.</p>
+        </div>
+        <button class="icon-btn" id="closeExtendModal">×</button>
+      </div>
+
+      <form id="extendForm" class="customer-form">
+        <input type="hidden" id="extendCustomerId" />
+
+        <div class="form-grid">
+          <label class="full">
+            Paket Perpanjangan
+            <select id="extendPackage" required></select>
+          </label>
+
+          <label>
+            Tanggal Start
+            <input id="extendStartDate" type="datetime-local" required />
+          </label>
+
+          <label>
+            Tanggal Expired
+            <input id="extendExpiredDate" type="datetime-local" readonly />
+          </label>
+
+          <label class="full">
+            Catatan
+            <textarea id="extendNote" rows="3" placeholder="Contoh: Perpanjang dari pembayaran tunai"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" id="cancelExtend">Batal</button>
+          <button type="submit" class="primary-btn">Simpan Perpanjangan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <div class="modal-backdrop hidden" id="premiumConfirmModal">
+    <div class="modal-card confirm-modal-card">
+      <div class="confirm-hero">
+        <button class="icon-btn confirm-close" id="premiumConfirmClose">×</button>
+        <div class="confirm-icon">✓</div>
+        <div>
+          <h2 id="premiumConfirmTitle">Konfirmasi</h2>
+          <p id="premiumConfirmText">Apakah data akan dilanjutkan?</p>
+        </div>
+      </div>
+
+      <div class="confirm-body">
+        <div class="confirm-details" id="premiumConfirmDetails"></div>
+        <div class="confirm-note">
+          <b>Catatan</b>
+          <span>Pilih Ya untuk menyimpan data dan memasukkan command ke PendingCommand. Pilih Tidak untuk membatalkan.</span>
+        </div>
+      </div>
+
+      <div class="modal-actions confirm-actions">
+        <button type="button" class="secondary-btn" id="premiumConfirmNo">Tidak, Batalkan</button>
+        <button type="button" class="primary-btn" id="premiumConfirmYes">Ya, Simpan & Command</button>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="app.js"></script>
+</body>
+</html>
