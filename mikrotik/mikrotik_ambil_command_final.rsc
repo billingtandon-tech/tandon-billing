@@ -1,12 +1,16 @@
 # Tandon Network Billing - Eksekusi Command MikroTik
-# Versi GitHub + Netlify + Apps Script langsung
-# Isi appsScriptUrl dengan URL Web App dari Google Apps Script. Tidak pakai Netlify Function lagi.
-# Logika final:
-# ENABLE_USER  : hapus scheduler terkait -> ubah profile paket terpilih -> remove active supaya reconnect
-# DISABLE_USER : hapus scheduler terkait -> ubah profile ke Expire -> remove active supaya reconnect
-# CHANGE_PROFILE: hapus scheduler terkait -> ubah profile -> remove active supaya reconnect
+# Versi GitHub + Netlify + Apps Script
+# KHUSUS MikroTik lewat Netlify Function supaya aman dari redirect 302 Google Apps Script.
+# Web tetap langsung memakai URL Apps Script di menu Pengaturan.
+#
+# GANTI mikrotikUrl dengan URL Netlify abang:
+# https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik
+#
+# GANTI token harus sama dengan:
+# 1. Menu Pengaturan web
+# 2. Netlify Environment Variable MIKROTIK_TOKEN
 
-:local appsScriptUrl "https://script.google.com/macros/s/ISI_URL_APPS_SCRIPT_ANDA/exec"
+:local mikrotikUrl "https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik"
 :local token "TANDON12345"
 :local expireProfile "Expire"
 
@@ -14,9 +18,9 @@
 
 :local result ""
 :do {
-    :set result [/tool fetch url=$appsScriptUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"getPendingCommandText\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\"}") output=user as-value]
+    :set result [/tool fetch url=$mikrotikUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"getPendingCommandText\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\"}") output=user check-certificate=no as-value]
 } on-error={
-    :log warning "Tandon Billing: gagal fetch ke Apps Script"
+    :log warning "Tandon Billing: gagal fetch ke Netlify Function MikroTik"
     :return
 }
 
@@ -50,7 +54,7 @@
 :if ([:len $secretId] = 0) do={
     :log warning ("Tandon Billing: PPP Secret tidak ditemukan: " . $username)
 
-    /tool fetch url=$appsScriptUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"ERROR\",\"message\":\"PPP Secret tidak ditemukan\"}") output=none
+    /tool fetch url=$mikrotikUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"ERROR\",\"message\":\"PPP Secret tidak ditemukan\"}") output=none check-certificate=no
 
     :return
 }
@@ -141,7 +145,7 @@
     }
 
     # 4. Update command DONE
-    /tool fetch url=$appsScriptUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"DONE\",\"message\":\"Berhasil dieksekusi MikroTik\"}") output=none
+    /tool fetch url=$mikrotikUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"DONE\",\"message\":\"Berhasil dieksekusi MikroTik\"}") output=none check-certificate=no
 
     :log info ("Tandon Billing: command DONE id=" . $cmdId)
 
@@ -149,5 +153,5 @@
 
     :log warning ("Tandon Billing: gagal eksekusi command " . $action . " untuk " . $username)
 
-    /tool fetch url=$appsScriptUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"ERROR\",\"message\":\"Gagal eksekusi di MikroTik\"}") output=none
+    /tool fetch url=$mikrotikUrl http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data=("{\"action\":\"updateCommand\",\"source\":\"mikrotik\",\"token\":\"" . $token . "\",\"id\":\"" . $cmdId . "\",\"status\":\"ERROR\",\"message\":\"Gagal eksekusi di MikroTik\"}") output=none check-certificate=no
 }

@@ -1,93 +1,136 @@
-# Tandon Network Billing - GitHub + Netlify + Apps Script
+# Tandon Network Billing - GitHub + Netlify + Apps Script + MikroTik Proxy
 
-Paket ini dibuat agar web tetap mudah deploy di Netlify, tetapi backend/function tidak lagi memakai Netlify Function. Backend utama memakai Google Apps Script.
+## Konsep final
 
-## Struktur Folder
+- GitHub: tempat simpan source code.
+- Netlify: hosting web dan proxy kecil khusus MikroTik.
+- Google Apps Script: backend utama ke Google Sheet.
+- MikroTik: ambil PendingCommand lewat Netlify Function, bukan langsung ke Apps Script.
 
-```text
-tandon-billing/
-├── index.html
-├── style.css
-├── app.js
-├── apps-script/
-│   └── kode.gs
-├── mikrotik/
-│   └── mikrotik_ambil_command_final.rsc
-├── arsip/
-│   └── mikrotik2.js
-└── README.md
-```
-
-## Alur Sistem
+Alur web:
 
 ```text
-GitHub = simpan source code
-Netlify = hosting web statis dari GitHub
-Google Apps Script = backend/API ke Google Sheet
-Google Sheet = database billing
-MikroTik = ambil command langsung ke Apps Script
+Web Netlify -> Google Apps Script -> Google Sheet
 ```
 
-## 1. Upload ke GitHub
+Alur MikroTik:
 
-1. Buat repository baru di GitHub, contoh: `tandon-billing`.
-2. Upload semua isi folder ini ke repository.
-3. Pastikan `index.html`, `style.css`, dan `app.js` berada di root repository.
+```text
+MikroTik -> Netlify Function -> Google Apps Script -> Google Sheet
+```
 
-## 2. Connect GitHub ke Netlify
+Alur MikroTik dibuat lewat Netlify Function karena beberapa RouterOS gagal mengikuti redirect 302 dari Google Apps Script.
 
-1. Masuk Netlify.
-2. Add new site -> Import an existing project.
-3. Pilih GitHub repository `tandon-billing`.
-4. Build command kosongkan.
-5. Publish directory isi dengan `.` atau biarkan root.
-6. Deploy.
+## Struktur
 
-## 3. Pasang Google Apps Script
+```text
+index.html
+style.css
+app.js
+apps-script/kode.gs
+mikrotik/mikrotik_ambil_command_final.rsc
+netlify/functions/mikrotik.js
+netlify.toml
+```
 
-1. Buka Google Sheet database billing.
-2. Klik Extensions / Ekstensi -> Apps Script.
-3. Copy isi file `apps-script/kode.gs`.
-4. Tempel ke Apps Script.
-5. Deploy -> New deployment -> Web app.
-6. Execute as: Me.
-7. Who has access: Anyone.
-8. Copy URL Web App yang berakhiran `/exec`.
+## Langkah upload ke GitHub
 
-## 4. Isi Pengaturan di Web
+Upload semua isi folder ini ke repository GitHub. Pastikan `index.html`, `style.css`, dan `app.js` ada di root repo, bukan masuk dobel folder.
 
-Buka web Netlify, login, masuk menu Pengaturan, lalu isi:
+## Setting Netlify
 
-- URL Google Apps Script Web App
-- Token MikroTik, contoh: `TANDON12345`
-- Nama Router
-- Catatan Koneksi
+Deploy dari GitHub repo.
 
-Klik Simpan Pengaturan. Token akan disimpan ke sheet `Pengaturan` sehingga Apps Script bisa memvalidasi request dari MikroTik.
+Build command: kosong
+Publish directory: `.`
 
-## 5. Pasang Script MikroTik
+File `netlify.toml` sudah mengatur:
 
-1. Buka file `mikrotik/mikrotik_ambil_command_final.rsc`.
-2. Ganti bagian ini:
+```toml
+[build]
+  publish = "."
+  functions = "netlify/functions"
+```
+
+## Environment Variables Netlify
+
+Masuk Netlify -> Project -> Site configuration -> Environment variables.
+
+Tambahkan:
+
+```text
+APPS_SCRIPT_URL = https://script.google.com/macros/s/AKfycbykFoYQUqJp1WVvBqL3zYCHykAmIXqx1i2RiNieD2lYBIiOC_CRJyV2VqsJHC6oPoEM/exec
+MIKROTIK_TOKEN = TANDON12345
+```
+
+Kalau token di menu Pengaturan web berbeda, isi `MIKROTIK_TOKEN` dengan token yang sama.
+
+Setelah menambah environment variable, lakukan redeploy Netlify.
+
+## Apps Script
+
+Copy isi file:
+
+```text
+apps-script/kode.gs
+```
+
+ke Google Apps Script yang terhubung dengan Google Sheet database. Deploy sebagai Web App dengan akses `Anyone`.
+
+## Pengaturan web
+
+Di web Billing menu Pengaturan isi:
+
+```text
+URL Apps Script Web App = URL /exec Apps Script
+Token MikroTik = token yang sama dengan Netlify MIKROTIK_TOKEN
+Nama Router = Router Utama
+```
+
+## Script MikroTik
+
+Buka:
+
+```text
+mikrotik/mikrotik_ambil_command_final.rsc
+```
+
+Ganti:
 
 ```routeros
-:local appsScriptUrl "https://script.google.com/macros/s/ISI_URL_APPS_SCRIPT_ANDA/exec"
+:local mikrotikUrl "https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik"
 :local token "TANDON12345"
 ```
 
-3. Isi `appsScriptUrl` sesuai URL Web App Apps Script.
-4. Isi `token` sama persis dengan Token MikroTik di menu Pengaturan web.
-5. Import/paste script ke MikroTik.
-6. Jalankan via scheduler sesuai kebutuhan.
+Contoh:
 
-## Catatan Penting
+```routeros
+:local mikrotikUrl "https://superb-gumcxxxx.netlify.app/.netlify/functions/mikrotik"
+:local token "TANDON12345"
+```
 
-- `arsip/mikrotik2.js` hanya arsip lama Netlify Function. Tidak perlu dipakai untuk alur baru.
-- Web tetap jalan di Netlify.
-- Command MikroTik langsung ke Apps Script, bukan ke `/.netlify/functions/mikrotik`.
-- Jika token di menu Pengaturan diubah, token di script MikroTik juga harus disamakan.
+## Tes MikroTik manual
 
+Di New Terminal MikroTik:
 
-## Catatan Fix Pelanggan
+```routeros
+/tool fetch url="https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik" http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data="{\"action\":\"getPendingCommandText\",\"source\":\"mikrotik\",\"token\":\"TANDON12345\"}" output=user check-certificate=no
+```
 
-Versi ini memperbaiki alur tambah/edit pelanggan: setelah tombol Simpan ditekan, data tetap disimpan lokal dan otomatis dikirim ke Google Sheet memakai URL Apps Script yang diisi di menu Pengaturan. Jika URL belum benar, aplikasi akan memberi toast bahwa data masih lokal dan bisa dikirim manual lewat tombol Kirim ke Sheet.
+Hasil benar:
+
+```text
+EMPTY
+```
+
+atau:
+
+```text
+OK|id-command|ENABLE_USER|username|profile
+```
+
+atau kalau token salah:
+
+```text
+ERROR|TOKEN_INVALID
+```
