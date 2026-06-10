@@ -149,41 +149,14 @@ const CASH_ACCOUNT_STORAGE_KEY = 'tandon_cash_accounts';
 const CASH_ADJUST_STORAGE_KEY = 'tandon_cash_adjustments';
 const SHEET_REFRESH_INTERVAL_MS = 5000;
 
-const defaultPaket = [
-  {
-    id: crypto.randomUUID(),
-    name: 'PAKET 7 HARI',
-    price: 25000,
-    speed: '10 Mbps',
-    profile: '7 Day',
-    type: 'Prabayar / Pascabayar',
-    note: 'Paket 7 hari untuk pelanggan harian.'
-  },
-  {
-    id: crypto.randomUUID(),
-    name: 'PAKET 15 HARI',
-    price: 50000,
-    speed: '10 Mbps',
-    profile: '15 Day',
-    type: 'Prabayar / Pascabayar',
-    note: 'Paket 15 hari / setengah bulan.'
-  },
-  {
-    id: crypto.randomUUID(),
-    name: 'PAKET 30 HARI',
-    price: 100000,
-    speed: '10 Mbps',
-    profile: '30 Day',
-    type: 'Prabayar / Pascabayar',
-    note: 'Paket 30 hari / satu bulan.'
-  }
-];
+// Produksi: semua data awal dikosongkan. Paket asli diambil dari Google Sheet.
+const defaultPaket = [];
 
 // Produksi: jangan tampilkan pelanggan contoh di perangkat baru.
 // Data asli akan otomatis ditarik dari Google Sheet setelah login.
 const defaultPelanggan = [];
 
-const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbykFoYQUqJp1WVvBqL3zYCHykAmIXqx1i2RiNieD2lYBIiOC_CRJyV2VqsJHC6oPoEM/exec';
+const DEFAULT_APPS_SCRIPT_URL = '';
 
 const defaultSettings = {
   businessName: 'Tandon Network',
@@ -236,11 +209,8 @@ const defaultAset = [];
 
 const defaultCashAdjustments = [];
 
-const defaultCashAccounts = [
-  { id: crypto.randomUUID(), name: 'BRI', type: 'Bank', owner: 'Tandon Network', number: '', status: 'Aktif', note: 'Transfer BRI' },
-  { id: crypto.randomUUID(), name: 'DANA', type: 'E-Wallet', owner: 'Tandon Network', number: '', status: 'Aktif', note: 'Transfer E-Wallet DANA' },
-  { id: crypto.randomUUID(), name: 'Tunai', type: 'Tunai', owner: 'Admin', number: '', status: 'Aktif', note: 'Uang cash/tunai' }
-];
+// Produksi: rekening/kas awal dikosongkan supaya semua saldo mulai dari 0.
+const defaultCashAccounts = [];
 
 const CUSTOMER_DAY_PACKAGES = Array.from({ length: 30 }, (_, index) => {
   const days = index + 1;
@@ -302,6 +272,8 @@ let activityLogs = loadData(ACTIVITY_STORAGE_KEY, []);
 let sheetRefreshTimer = null;
 let isRefreshingPemasukan = false;
 let isRefreshingPendingCommands = false;
+let isRefreshingAllData = false;
+let isWritingToSheet = false;
 normalizePackages();
 
 function loadData(key, fallback) {
@@ -312,9 +284,46 @@ function loadData(key, fallback) {
 
 function normalizeSettings(value = {}) {
   const merged = { ...defaultSettings, ...(value || {}) };
-  if (!merged.appsScriptUrl) merged.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
+  if (!merged.appsScriptUrl && DEFAULT_APPS_SCRIPT_URL) merged.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
   if (!merged.mikrotikToken) merged.mikrotikToken = 'TANDON12345';
   return merged;
+}
+
+
+let cachedServerAppsScriptUrl = '';
+
+async function getServerAppsScriptUrl() {
+  if (cachedServerAppsScriptUrl) return cachedServerAppsScriptUrl;
+  try {
+    const response = await fetch('/.netlify/functions/config', { cache: 'no-store' });
+    if (!response.ok) return '';
+    const json = await response.json();
+    cachedServerAppsScriptUrl = String(json.appsScriptUrl || '').trim();
+    return cachedServerAppsScriptUrl;
+  } catch (error) {
+    console.warn('Gagal membaca konfigurasi Netlify:', error);
+    return '';
+  }
+}
+
+async function getAppsScriptEndpoint() {
+  const serverUrl = await getServerAppsScriptUrl();
+  if (serverUrl) {
+    if (settings.appsScriptUrl !== serverUrl) {
+      settings.appsScriptUrl = serverUrl;
+      saveSettings();
+      const input = document.getElementById('settingAppsScriptUrl');
+      if (input) input.value = serverUrl;
+    }
+    return serverUrl;
+  }
+
+  const localUrl = String(settings.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL || '').trim();
+  if (localUrl && settings.appsScriptUrl !== localUrl) {
+    settings.appsScriptUrl = localUrl;
+    saveSettings();
+  }
+  return localUrl;
 }
 
 function savePelanggan() { localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(pelanggan)); }
@@ -469,7 +478,7 @@ loginForm.addEventListener('submit', async (event) => {
   loginBtn.textContent = 'Memeriksa...';
 
   try {
-    const endpoint = settings.appsScriptUrl || '';
+    const endpoint = await getAppsScriptEndpoint();
 
     if (endpoint) {
       const result = await postToAppsScript(endpoint, {
@@ -1153,7 +1162,7 @@ extendForm?.addEventListener('submit', submitExtendPrepaid);
 pushSheetBtn?.addEventListener('click', pushToGoogleSheet);
 pullSheetBtn?.addEventListener('click', pullFromGoogleSheet);
 
-expenseForm?.addEventListener('submit', (event) => {
+expenseForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const id = document.getElementById('expenseId').value || crypto.randomUUID();
@@ -1178,6 +1187,11 @@ expenseForm?.addEventListener('submit', (event) => {
   closeExpense();
   renderAll();
   goToPage('pengeluaran');
+
+  const syncResult = await syncPengeluaranToGoogleSheet({ silent: true });
+  if (!syncResult.ok) {
+    showToast('Pengeluaran tersimpan lokal, tetapi belum masuk Google Sheet. Cek koneksi/Apps Script.');
+  }
 });
 
 function openExpense(item = null) {
@@ -1553,15 +1567,28 @@ function editPengeluaran(id) {
   if (item) openExpense(item);
 }
 
-function hapusPengeluaran(id) {
+async function hapusPengeluaran(id) {
   const item = pengeluaran.find((row) => row.id === id);
   if (!item) return;
 
   if (!confirm(`Hapus pengeluaran ${item.description || item.category}?`)) return;
 
+  const beforeDelete = [...pengeluaran];
   pengeluaran = pengeluaran.filter((row) => row.id !== id);
   savePengeluaran();
   renderAll();
+
+  const syncResult = await deletePengeluaranFromGoogleSheet(id);
+  if (!syncResult.ok) {
+    pengeluaran = beforeDelete;
+    savePengeluaran();
+    renderAll();
+    showToast('Gagal hapus di Google Sheet. Data lokal dikembalikan.');
+    return;
+  }
+
+  await refreshAllDataFromSheet({ force: true, silent: true });
+  showToast('Pengeluaran berhasil dihapus dan disinkronkan.');
 }
 
 function getExpenseThisMonth() {
@@ -3397,6 +3424,54 @@ function formatDateTime(value) {
 
 
 
+
+async function syncPengeluaranToGoogleSheet(options = {}) {
+  const endpoint = await getAppsScriptEndpoint();
+  if (!endpoint) {
+    const message = 'URL Google Apps Script belum tersedia.';
+    if (!options.silent) showToast(message);
+    return { ok: false, message };
+  }
+
+  isWritingToSheet = true;
+  try {
+    const result = await postToAppsScript(endpoint, {
+      action: 'savePengeluaran',
+      pengeluaran
+    });
+    if (!result.ok) throw new Error(result.message || 'Gagal menyimpan pengeluaran');
+    if (!options.silent) showToast('Pengeluaran berhasil sinkron ke Google Sheet');
+    return result;
+  } catch (error) {
+    console.error(error);
+    const message = error.message || 'Gagal sinkron pengeluaran';
+    if (!options.silent) showToast(message);
+    return { ok: false, message };
+  } finally {
+    isWritingToSheet = false;
+  }
+}
+
+async function deletePengeluaranFromGoogleSheet(id) {
+  const endpoint = await getAppsScriptEndpoint();
+  if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum tersedia.' };
+
+  isWritingToSheet = true;
+  try {
+    const result = await postToAppsScript(endpoint, {
+      action: 'deletePengeluaran',
+      id
+    });
+    if (!result.ok) throw new Error(result.message || 'Gagal menghapus pengeluaran');
+    return result;
+  } catch (error) {
+    console.error(error);
+    return { ok: false, message: error.message || 'Gagal hapus pengeluaran' };
+  } finally {
+    isWritingToSheet = false;
+  }
+}
+
 async function syncPemasukanToGoogleSheet(income, options = {}) {
   const endpoint = settings.appsScriptUrl;
   if (!endpoint) {
@@ -3493,18 +3568,72 @@ async function refreshPendingCommandsFromSheet(options = {}) {
   }
 }
 
+
+function applySheetDataToLocal(data = {}) {
+  pelanggan = Array.isArray(data.pelanggan) ? data.pelanggan : pelanggan;
+  paket = Array.isArray(data.paket) ? data.paket : paket;
+  tagihan = Array.isArray(data.tagihan) ? data.tagihan : tagihan;
+  pembayaran = Array.isArray(data.pembayaran) ? data.pembayaran : pembayaran;
+  pemasukan = Array.isArray(data.pemasukan) ? data.pemasukan : pemasukan;
+  pengeluaran = Array.isArray(data.pengeluaran) ? data.pengeluaran : pengeluaran;
+  aset = Array.isArray(data.aset) ? data.aset : aset;
+  cashAccounts = Array.isArray(data.cashAccounts) ? data.cashAccounts : cashAccounts;
+  cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
+  pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
+  activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
+  settings = data.settings && typeof data.settings === 'object' ? normalizeSettings({ ...settings, ...data.settings }) : normalizeSettings(settings);
+
+  savePelanggan();
+  savePaket();
+  saveTagihan();
+  savePembayaran();
+  savePemasukan();
+  savePengeluaran();
+  saveAset();
+  saveCashAccounts();
+  saveCashAdjustments();
+  saveCommands();
+  saveActivityLogs();
+  saveSettings();
+}
+
+async function refreshAllDataFromSheet(options = {}) {
+  if (isRefreshingAllData && !options.force) return { ok: false, message: 'Refresh masih berjalan' };
+  if (isWritingToSheet && !options.force) return { ok: false, message: 'Sedang menyimpan data' };
+
+  const endpoint = await getAppsScriptEndpoint();
+  if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
+
+  isRefreshingAllData = true;
+  try {
+    const result = await postToAppsScript(endpoint, {
+      action: 'getAll',
+      t: Date.now()
+    });
+
+    if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
+    applySheetDataToLocal(result.data || {});
+    settings.appsScriptUrl = endpoint;
+    saveSettings();
+    renderAll();
+    return { ok: true };
+  } catch (error) {
+    console.warn('Gagal refresh semua data dari Google Sheet:', error);
+    if (!options.silent) showToast('Gagal refresh data dari Google Sheet');
+    return { ok: false, message: error.message };
+  } finally {
+    isRefreshingAllData = false;
+  }
+}
+
 function startSheetAutoRefresh() {
   stopSheetAutoRefresh();
 
-  if (!settings.appsScriptUrl) return;
-
-  refreshPemasukanFromSheet({ force: true });
-  refreshPendingCommandsFromSheet({ force: true });
+  refreshAllDataFromSheet({ force: true, silent: true });
 
   sheetRefreshTimer = setInterval(() => {
     if (localStorage.getItem('tandon_login') === 'true' && !document.hidden) {
-      refreshPemasukanFromSheet();
-      refreshPendingCommandsFromSheet();
+      refreshAllDataFromSheet({ silent: true });
     }
   }, SHEET_REFRESH_INTERVAL_MS);
 }
@@ -3518,13 +3647,13 @@ function stopSheetAutoRefresh() {
 
 window.addEventListener('focus', () => {
   if (localStorage.getItem('tandon_login') === 'true') {
-    refreshPemasukanFromSheet({ force: true });
+    refreshAllDataFromSheet({ force: true, silent: true });
   }
 });
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && localStorage.getItem('tandon_login') === 'true') {
-    refreshPemasukanFromSheet({ force: true });
+    refreshAllDataFromSheet({ force: true, silent: true });
   }
 });
 
@@ -3583,7 +3712,7 @@ async function pushToGoogleSheet() {
 
 
 async function autoPullFromGoogleSheetOnLogin() {
-  const endpoint = settings.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL;
+  const endpoint = await getAppsScriptEndpoint();
   if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
 
   try {
@@ -3603,6 +3732,7 @@ async function autoPullFromGoogleSheetOnLogin() {
     pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
     activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
     settings = data.settings && typeof data.settings === 'object' ? normalizeSettings({ ...settings, ...data.settings }) : normalizeSettings(settings);
+    settings.appsScriptUrl = endpoint;
 
     savePelanggan();
     savePaket();
@@ -3626,7 +3756,7 @@ async function autoPullFromGoogleSheetOnLogin() {
 }
 
 async function pullFromGoogleSheet() {
-  const endpoint = settings.appsScriptUrl;
+  const endpoint = await getAppsScriptEndpoint();
   if (!endpoint) {
     goToPage('pengaturan');
     alert('Isi dulu URL Google Apps Script di menu Pengaturan.');
@@ -3654,6 +3784,7 @@ async function pullFromGoogleSheet() {
     pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
     activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
     settings = data.settings && typeof data.settings === 'object' ? normalizeSettings(data.settings) : settings;
+    settings.appsScriptUrl = endpoint;
 
     savePelanggan();
     savePaket();

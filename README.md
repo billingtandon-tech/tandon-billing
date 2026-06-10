@@ -1,151 +1,42 @@
-# Tandon Network Billing - GitHub + Netlify + Apps Script + MikroTik Proxy
+# Tandon Network Billing - Auto Sync HP Fix
 
-## Konsep final
+Versi ini memakai arsitektur:
+- GitHub: source code
+- Netlify: web + function proxy MikroTik + function config
+- Google Apps Script: backend Google Sheet
+- MikroTik: ambil command lewat Netlify Function
 
-- GitHub: tempat simpan source code.
-- Netlify: hosting web dan proxy kecil khusus MikroTik.
-- Google Apps Script: backend utama ke Google Sheet.
-- MikroTik: ambil PendingCommand lewat Netlify Function, bukan langsung ke Apps Script.
+## Fix penting versi ini
 
-Alur web:
-
-```text
-Web Netlify -> Google Apps Script -> Google Sheet
-```
-
-Alur MikroTik:
+1. HP/perangkat baru otomatis membaca `APPS_SCRIPT_URL` dari Netlify Environment Variables lewat:
 
 ```text
-MikroTik -> Netlify Function -> Google Apps Script -> Google Sheet
+/.netlify/functions/config
 ```
 
-Alur MikroTik dibuat lewat Netlify Function karena beberapa RouterOS gagal mengikuti redirect 302 dari Google Apps Script.
+2. Setelah login, aplikasi otomatis menarik data dari Google Sheet.
 
-## Struktur
+3. Kalau database/spreadsheet pindah, tidak perlu edit `app.js` lagi. Cukup ganti `APPS_SCRIPT_URL` di Netlify Environment Variables lalu deploy without cache.
 
-```text
-index.html
-style.css
-app.js
-apps-script/kode.gs
-mikrotik/mikrotik_ambil_command_final.rsc
-netlify/functions/mikrotik.js
-netlify.toml
-```
+## File yang wajib diupdate
 
-## Langkah upload ke GitHub
+- `app.js`
+- `netlify/functions/config.js`
 
-Upload semua isi folder ini ke repository GitHub. Pastikan `index.html`, `style.css`, dan `app.js` ada di root repo, bukan masuk dobel folder.
+`kode.gs` tidak wajib diganti jika Apps Script yang dipakai sudah versi final dan mendukung action `getAll`.
 
-## Setting Netlify
+## Setelah upload ke GitHub
 
-Deploy dari GitHub repo.
+1. Tunggu Netlify deploy.
+2. Pastikan Environment Variables Netlify berisi:
+   - `APPS_SCRIPT_URL`
+   - `MIKROTIK_TOKEN`
+3. Jalankan:
+   - Deploys -> Trigger deploy -> Deploy project without cache
+4. Di HP, buka mode samaran/incognito untuk tes pertama.
 
-Build command: kosong
-Publish directory: `.`
 
-File `netlify.toml` sudah mengatur:
-
-```toml
-[build]
-  publish = "."
-  functions = "netlify/functions"
-```
-
-## Environment Variables Netlify
-
-Masuk Netlify -> Project -> Site configuration -> Environment variables.
-
-Tambahkan:
-
-```text
-APPS_SCRIPT_URL = https://script.google.com/macros/s/AKfycbykFoYQUqJp1WVvBqL3zYCHykAmIXqx1i2RiNieD2lYBIiOC_CRJyV2VqsJHC6oPoEM/exec
-MIKROTIK_TOKEN = TANDON12345
-```
-
-Kalau token di menu Pengaturan web berbeda, isi `MIKROTIK_TOKEN` dengan token yang sama.
-
-Setelah menambah environment variable, lakukan redeploy Netlify.
-
-## Apps Script
-
-Copy isi file:
-
-```text
-apps-script/kode.gs
-```
-
-ke Google Apps Script yang terhubung dengan Google Sheet database. Deploy sebagai Web App dengan akses `Anyone`.
-
-## Pengaturan web
-
-Di web Billing menu Pengaturan isi:
-
-```text
-URL Apps Script Web App = URL /exec Apps Script
-Token MikroTik = token yang sama dengan Netlify MIKROTIK_TOKEN
-Nama Router = Router Utama
-```
-
-## Script MikroTik
-
-Buka:
-
-```text
-mikrotik/mikrotik_ambil_command_final.rsc
-```
-
-Ganti:
-
-```routeros
-:local mikrotikUrl "https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik"
-:local token "TANDON12345"
-```
-
-Contoh:
-
-```routeros
-:local mikrotikUrl "https://superb-gumcxxxx.netlify.app/.netlify/functions/mikrotik"
-:local token "TANDON12345"
-```
-
-## Tes MikroTik manual
-
-Di New Terminal MikroTik:
-
-```routeros
-/tool fetch url="https://NAMA-SITE-ANDA.netlify.app/.netlify/functions/mikrotik" http-method=post http-header-field="Content-Type: text/plain;charset=utf-8" http-data="{\"action\":\"getPendingCommandText\",\"source\":\"mikrotik\",\"token\":\"TANDON12345\"}" output=user check-certificate=no
-```
-
-Hasil benar:
-
-```text
-EMPTY
-```
-
-atau:
-
-```text
-OK|id-command|ENABLE_USER|username|profile
-```
-
-atau kalau token salah:
-
-```text
-ERROR|TOKEN_INVALID
-```
-
-## Update HP / Auto Pull Data Sheet
-Versi ini menambahkan auto pull data dari Google Sheet setelah login. Perangkat baru (HP/laptop lain) tidak lagi menampilkan data pelanggan/pengeluaran contoh dari localStorage, tetapi langsung mengambil data dari Sheet melalui Apps Script.
-
-Yang berubah:
-- app.js: defaultPelanggan dikosongkan.
-- app.js: defaultPengeluaran dikosongkan.
-- app.js: showDashboard() dibuat async dan memanggil autoPullFromGoogleSheetOnLogin().
-- app.js: fungsi autoPullFromGoogleSheetOnLogin() ditambahkan.
-
-Yang wajib diupdate:
-1. Upload/replace app.js ke GitHub.
-2. Tunggu Netlify deploy, atau jalankan Deploy project without cache.
-3. kode.gs tidak wajib diganti untuk fix ini karena action getAll sudah ada di Apps Script versi final. Jika Apps Script pelanggan masih versi lama, copy ulang apps-script/kode.gs lalu Deploy New Version.
-4. Di HP, tutup browser lalu buka ulang. Jika masih muncul data lama, hapus data situs/cache atau coba mode samaran.
+## Catatan versi no-default-zero
+- Data contoh bawaan dihapus: pelanggan, paket, pengeluaran, aset, rekening/kas kosong.
+- Dashboard perangkat baru akan mulai dari 0 dan otomatis mengambil data dari Google Sheet.
+- Pastikan Netlify Environment Variable APPS_SCRIPT_URL sudah diisi agar perangkat baru tidak memakai URL lokal lama.
