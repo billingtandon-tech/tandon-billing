@@ -186,6 +186,8 @@ const defaultPelanggan = [
   { id: crypto.randomUUID(), nama: 'Rina Lestari', phone: '083333444455', alamat: 'Kp. Tandon RT 04', username: 'rina04', password: '12345', tipe: 'Prabayar', paket: '10 Mbps', status: 'Expired', tanggalAktif: '2026-05-09', tempo: '2026-06-09' }
 ];
 
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbykFoYQUqJp1WVvBqL3zYCHykAmIXqx1i2RiNieD2lYBIiOC_CRJyV2VqsJHC6oPoEM/exec';
+
 const defaultSettings = {
   businessName: 'Tandon Network',
   businessAddress: 'Alamat usaha belum diisi',
@@ -197,7 +199,7 @@ const defaultSettings = {
   prepaidDays: 30,
   isolationMode: 'Manual',
   currency: 'IDR',
-  appsScriptUrl: '',
+  appsScriptUrl: DEFAULT_APPS_SCRIPT_URL,
   mikrotikProxyUrl: '',
   mikrotikToken: '',
   routerName: 'Router Utama',
@@ -313,7 +315,7 @@ let pengeluaran = loadData(EXPENSE_STORAGE_KEY, defaultPengeluaran);
 let aset = loadData(ASSET_STORAGE_KEY, defaultAset);
 let cashAccounts = loadData(CASH_ACCOUNT_STORAGE_KEY, defaultCashAccounts);
 let cashAdjustments = loadData(CASH_ADJUST_STORAGE_KEY, defaultCashAdjustments);
-let settings = loadData(SETTINGS_STORAGE_KEY, defaultSettings);
+let settings = normalizeSettings(loadData(SETTINGS_STORAGE_KEY, defaultSettings));
 let pendingCommands = loadData(COMMAND_STORAGE_KEY, []);
 let activityLogs = loadData(ACTIVITY_STORAGE_KEY, []);
 let sheetRefreshTimer = null;
@@ -325,6 +327,13 @@ function loadData(key, fallback) {
   const saved = localStorage.getItem(key);
   if (!saved) return fallback;
   try { return JSON.parse(saved); } catch { return fallback; }
+}
+
+function normalizeSettings(value = {}) {
+  const merged = { ...defaultSettings, ...(value || {}) };
+  if (!merged.appsScriptUrl) merged.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
+  if (!merged.mikrotikToken) merged.mikrotikToken = 'TANDON12345';
+  return merged;
 }
 
 function savePelanggan() { localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(pelanggan)); }
@@ -1108,7 +1117,7 @@ document.getElementById('resetWaTemplateBtn')?.addEventListener('click', () => {
 
 resetSettingsBtn?.addEventListener('click', () => {
   if (!confirm('Reset pengaturan ke default?')) return;
-  settings = {...defaultSettings};
+  settings = normalizeSettings(defaultSettings);
   saveSettings();
   renderAll();
   showToast('Pengaturan direset');
@@ -3614,7 +3623,7 @@ async function pullFromGoogleSheet() {
     cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
     pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
     activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-    settings = data.settings && typeof data.settings === 'object' ? {...defaultSettings, ...data.settings} : settings;
+    settings = data.settings && typeof data.settings === 'object' ? normalizeSettings(data.settings) : settings;
 
     savePelanggan();
     savePaket();
@@ -3763,7 +3772,7 @@ function importBackupJson(event) {
       cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
       pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
       activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-      settings = data.settings && typeof data.settings === 'object' ? {...defaultSettings, ...data.settings} : settings;
+      settings = data.settings && typeof data.settings === 'object' ? normalizeSettings(data.settings) : settings;
 
       savePelanggan();
       savePaket();
@@ -3852,7 +3861,7 @@ function resetLocalData() {
   cashAccounts = JSON.parse(JSON.stringify(defaultCashAccounts));
   cashAdjustments = JSON.parse(JSON.stringify(defaultCashAdjustments));
   pendingCommands = [];
-  settings = {...defaultSettings};
+  settings = normalizeSettings(defaultSettings);
 
   savePelanggan();
   savePaket();
@@ -3925,7 +3934,7 @@ function collectSettings() {
     prepaidDays: Number(document.getElementById('settingPrepaidDays')?.value || 30),
     isolationMode: document.getElementById('settingIsolationMode')?.value || 'Manual',
     currency: 'IDR',
-    appsScriptUrl: document.getElementById('settingAppsScriptUrl')?.value.trim() || '',
+    appsScriptUrl: document.getElementById('settingAppsScriptUrl')?.value.trim() || DEFAULT_APPS_SCRIPT_URL,
     mikrotikProxyUrl: document.getElementById('settingMikrotikProxyUrl')?.value.trim() || settings.mikrotikProxyUrl || '',
     mikrotikToken: document.getElementById('settingMikrotikToken')?.value.trim() || settings.mikrotikToken || '',
     routerName: document.getElementById('settingRouterName')?.value.trim() || '',
