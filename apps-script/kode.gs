@@ -208,10 +208,41 @@ function saveAll_(data) {
   writeJsonSheet_(SHEETS.activityLogs, data.activityLogs || []);
   if (data.userLogin) writeJsonSheet_(SHEETS.userLogin, data.userLogin || []);
   else ensureDefaultLogin_();
-  writeJsonSheet_(SHEETS.pendingCommands, data.pendingCommands || []);
+  writeJsonSheet_(SHEETS.pendingCommands, mergePendingCommandsForSave_(data.pendingCommands || []));
 
   const settingsArray = data.settings ? [data.settings] : [];
   writeJsonSheet_(SHEETS.settings, settingsArray);
+}
+
+
+function mergePendingCommandsForSave_(incomingCommands) {
+  const incoming = incomingCommands || [];
+  const existing = readJsonSheet_(SHEETS.pendingCommands);
+  const existingById = {};
+  existing.forEach(function(cmd) {
+    if (cmd && cmd.id) existingById[String(cmd.id)] = cmd;
+  });
+
+  return incoming.map(function(cmd) {
+    if (!cmd || !cmd.id) return cmd;
+    const old = existingById[String(cmd.id)];
+    if (!old) return cmd;
+
+    const oldStatus = String(old.status || '').toUpperCase();
+    const newStatus = String(cmd.status || '').toUpperCase();
+
+    // Jangan biarkan saveAll dari browser lama mengembalikan command DONE/ERROR menjadi PENDING.
+    if ((oldStatus === 'DONE' || oldStatus === 'ERROR') && newStatus === 'PENDING') {
+      return {
+        ...cmd,
+        status: old.status,
+        message: old.message || cmd.message || '',
+        updatedAt: old.updatedAt || cmd.updatedAt || ''
+      };
+    }
+
+    return cmd;
+  });
 }
 
 function getAll_() {
@@ -466,7 +497,18 @@ function addCommand_(command) {
     username: command.username || '',
     profile: command.profile || '',
     status: command.status || 'PENDING',
-    message: command.message || ''
+    message: command.message || '',
+    customerId: command.customerId || '',
+    customerName: command.customerName || command.nama || '',
+    packageId: command.packageId || '',
+    paket: command.paket || '',
+    aktif: command.aktif || command.tanggalAktif || '',
+    tanggalAktif: command.tanggalAktif || command.aktif || '',
+    tempo: command.tempo || '',
+    tipe: command.tipe || '',
+    targetStatus: command.targetStatus || '',
+    needsActivation: command.needsActivation === true ? true : false,
+    tunggakan: command.tunggakan || 0
   };
 
   // Kalau masih ada command PENDING untuk username + action yang sama,
@@ -480,9 +522,8 @@ function addCommand_(command) {
   if (existingIndex >= 0) {
     commands[existingIndex] = {
       ...commands[existingIndex],
-      createdAt: newCommand.createdAt,
-      profile: newCommand.profile,
-      message: newCommand.message,
+      ...newCommand,
+      id: commands[existingIndex].id || newCommand.id,
       status: 'PENDING'
     };
   } else {
@@ -597,6 +638,44 @@ function updateCommand_(id, status, message) {
   commands[index].updatedAt = new Date().toISOString();
 
   writeJsonSheet_(SHEETS.pendingCommands, commands);
+  applyCommandResultToPelanggan_(commands[index]);
+}
+
+function applyCommandResultToPelanggan_(command) {
+  if (!command) return;
+
+  const status = String(command.status || '').toUpperCase();
+  if (status !== 'DONE') return;
+
+  const action = String(command.action || '').toUpperCase();
+  const username = String(command.username || '').trim();
+  if (!username) return;
+
+  const rows = readJsonSheet_(SHEETS.pelanggan);
+  const index = rows.findIndex(function(item) {
+    return String(item.username || '').trim() === username ||
+      (command.customerId && String(item.id || '') === String(command.customerId));
+  });
+
+  if (index === -1) return;
+
+  if (action === 'ENABLE_USER' || action === 'CHANGE_PROFILE') {
+    rows[index].status = command.targetStatus || 'Aktif';
+    rows[index].needsActivation = false;
+    if (command.packageId) rows[index].packageId = command.packageId;
+    if (command.paket) rows[index].paket = command.paket;
+    if (command.aktif) rows[index].aktif = command.aktif;
+    if (command.tanggalAktif || command.aktif) rows[index].tanggalAktif = command.tanggalAktif || command.aktif;
+    if (command.tempo) rows[index].tempo = command.tempo;
+    if (command.tunggakan !== undefined && command.tunggakan !== '') rows[index].tunggakan = Number(command.tunggakan || 0);
+  }
+
+  if (action === 'DISABLE_USER') {
+    rows[index].status = rows[index].tipe === 'Pascabayar' ? 'Isolir' : 'Expired';
+    rows[index].needsActivation = true;
+  }
+
+  writeJsonSheet_(SHEETS.pelanggan, rows);
 }
 
 function writeJsonSheet_(sheetName, rows) {

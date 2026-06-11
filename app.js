@@ -2574,12 +2574,25 @@ async function submitExtendPrepaid(event) {
     action: 'ENABLE_USER',
     username: customer.username,
     profile: packageItem.profile,
-    message: `${isActivationOnly ? 'Aktivasi ulang' : (customerType === 'Pascabayar' ? 'Aktivasi ulang' : 'Perpanjang')} ${customer.nama} ${packageName(packageItem)} ${getPackageDays(packageItem)} HARI sampai ${formatDateTime(customer.tempo)}`
+    message: `${isActivationOnly ? 'Aktivasi ulang' : (customerType === 'Pascabayar' ? 'Aktivasi ulang' : 'Perpanjang')} ${customer.nama} ${packageName(packageItem)} ${getPackageDays(packageItem)} HARI sampai ${formatDateTime(customer.tempo)}`,
+    customerId: customer.id,
+    customerName: customer.nama,
+    packageId: packageItem.id,
+    paket: packageName(packageItem) || packageItem.speed || '',
+    aktif: customer.aktif,
+    tanggalAktif: customer.aktif,
+    tempo: customer.tempo,
+    tipe: customerType,
+    targetStatus: 'Aktif',
+    needsActivation: false,
+    tunggakan: Number(customer.tunggakan || 0)
   });
 
   savePelanggan();
   savePembayaran();
   savePemasukan();
+  markLocalMutation();
+  const customerSyncPromise = syncAllToGoogleSheet({ silent: true, force: true });
   closeExtend();
   currentExtendMode = 'payment';
   renderAll();
@@ -2603,6 +2616,10 @@ async function submitExtendPrepaid(event) {
     });
   });
 
+  customerSyncPromise.then((syncResult) => {
+    if (!syncResult?.ok) showToast('Status pelanggan aktif tersimpan lokal, gagal sinkron Sheet');
+  }).catch((error) => console.warn('Gagal sinkron status pelanggan setelah perpanjang:', error));
+
   if (!isActivationOnly && customerType === 'Prabayar') {
     const shouldRecordPayment = await openPremiumConfirm({
       title: 'Catat Pembayaran Prabayar?',
@@ -2625,7 +2642,11 @@ async function submitExtendPrepaid(event) {
       customer.status = 'Menunggak';
       customer.needsActivation = false;
       savePelanggan();
+      markLocalMutation();
       renderAll();
+      syncAllToGoogleSheet({ silent: true, force: true }).then((syncResult) => {
+        if (!syncResult?.ok) showToast('Status tunggakan tersimpan lokal, gagal sinkron Sheet');
+      });
       showToast(`${customer.nama} masuk menu Tunggakan ${formatRupiah(debtAmount)}. Aksi Prabayar dikosongkan sampai lunas.`);
     }
     return;
@@ -3240,7 +3261,16 @@ function generateDueCommands() {
   showToast(count ? `${count} command isolir tempo dibuat` : 'Tidak ada pelanggan lewat tempo');
 }
 
-function createCommand({action, username, profile, message, pemasukan}) {
+function cleanCommandMeta(meta = {}) {
+  const allowed = ['customerId', 'customerName', 'packageId', 'paket', 'aktif', 'tanggalAktif', 'tempo', 'tipe', 'targetStatus', 'needsActivation', 'tunggakan'];
+  return allowed.reduce((result, key) => {
+    if (meta[key] !== undefined && meta[key] !== null) result[key] = meta[key];
+    return result;
+  }, {});
+}
+
+function createCommand({action, username, profile, message, pemasukan, ...meta}) {
+  const commandMeta = cleanCommandMeta(meta);
   const existing = pendingCommands.find((item) => {
     return item.status === 'PENDING' && item.action === action && item.username === username;
   });
@@ -3252,6 +3282,7 @@ function createCommand({action, username, profile, message, pemasukan}) {
     existing.profile = profile || '';
     existing.message = message || '';
     existing.status = 'PENDING';
+    Object.assign(existing, commandMeta);
 
     if (pemasukan) {
       const incomeId = existing.pemasukanId || `PM-${existing.id}`;
@@ -3280,7 +3311,8 @@ function createCommand({action, username, profile, message, pemasukan}) {
     username,
     profile: profile || '',
     status: 'PENDING',
-    message: message || ''
+    message: message || '',
+    ...commandMeta
   };
 
   if (pemasukan) {
