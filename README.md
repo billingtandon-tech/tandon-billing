@@ -33,3 +33,8 @@ MIKROTIK_TOKEN = token yang sama dengan script MikroTik
 
 - Script MikroTik tidak perlu diganti kalau URL Netlify dan token tetap sama.
 - Scheduler MikroTik tidak perlu diganti.
+
+
+## Update: Instant dashboard + auto sync 2 detik
+
+Versi ini menampilkan dashboard langsung setelah login menggunakan cache/localStorage terlebih dahulu, lalu menarik data Google Sheet di background supaya login tidak terasa menunggu. Auto sync antar perangkat dijalankan setiap 2 detik selama halaman aktif. Saat sedang input/hapus/simpan data, refresh otomatis ditahan sebentar agar perubahan lokal tidak tertimpa data lama.

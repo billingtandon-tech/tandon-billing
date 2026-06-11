@@ -147,7 +147,7 @@ const COMMAND_STORAGE_KEY = 'tandon_pending_command';
 const ACTIVITY_STORAGE_KEY = 'tandon_activity_log';
 const CASH_ACCOUNT_STORAGE_KEY = 'tandon_cash_accounts';
 const CASH_ADJUST_STORAGE_KEY = 'tandon_cash_adjustments';
-const SHEET_REFRESH_INTERVAL_MS = 5000;
+const SHEET_REFRESH_INTERVAL_MS = 2000;
 
 const defaultPaket = [];
 
@@ -398,16 +398,18 @@ function normalizePackages() {
 }
 
 async function showDashboard() {
+  // Masuk dashboard dibuat instan: tampilkan cache/localStorage dulu,
+  // lalu ambil data Google Sheet di background tanpa menahan login.
   loginPage.classList.add('hidden');
   dashboardPage.classList.remove('hidden');
 
   applySettingsToUI();
-  await ensureAppsScriptUrlFromNetlifyConfig();
-  await pullAllFromGoogleSheetOnLogin();
-
   renderAll();
   startSheetAutoRefresh();
-  refreshAllFromGoogleSheet({ force: true, silent: true });
+
+  ensureAppsScriptUrlFromNetlifyConfig()
+    .then(() => refreshAllFromGoogleSheet({ force: true, silent: true }))
+    .catch((error) => console.warn('Gagal refresh data awal:', error));
 }
 
 function showLogin() {
