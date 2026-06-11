@@ -138,27 +138,6 @@ function doPost(e) {
     }
 
 
-
-    if (action === 'getPengeluaran') {
-      const rows = readJsonSheet_(SHEETS.pengeluaran);
-      return jsonOutput({
-        ok: true,
-        timestamp: new Date().toISOString(),
-        data: rows,
-        pengeluaran: rows
-      });
-    }
-
-    if (action === 'savePengeluaran') {
-      savePengeluaran_(body.pengeluaran || body.data || []);
-      return jsonOutput({ ok: true, message: 'Pengeluaran berhasil disimpan ke sheet Pengeluaran' });
-    }
-
-    if (action === 'deletePengeluaran') {
-      deletePengeluaran_(body.id);
-      return jsonOutput({ ok: true, message: 'Pengeluaran berhasil dihapus dari sheet Pengeluaran' });
-    }
-
     if (action === 'addCommand') {
       addCommand_(body.command || body);
       return jsonOutput({ ok: true, message: 'Command berhasil ditambahkan ke PendingCommand' });
@@ -472,47 +451,6 @@ function deleteAset_(id) {
     return String(item.id || '') !== String(id || '');
   });
   writeJsonSheet_(SHEETS.aset, nextRows);
-}
-
-
-function normalizePengeluaran_(expense, now) {
-  const amount = Number(expense.amount || expense.jumlah || 0);
-  if (amount <= 0) {
-    throw new Error('Nominal pengeluaran harus lebih dari 0');
-  }
-
-  return {
-    id: expense.id || Utilities.getUuid(),
-    createdAt: expense.createdAt || now || new Date().toISOString(),
-    date: expense.date || expense.tanggal || new Date(),
-    category: expense.category || expense.kategori || 'Lainnya',
-    description: expense.description || expense.deskripsi || expense.keterangan || '',
-    amount: amount,
-    method: expense.method || expense.metode || 'Tunai',
-    updatedAt: now || new Date().toISOString()
-  };
-}
-
-function savePengeluaran_(rows) {
-  if (!Array.isArray(rows)) {
-    throw new Error('Data pengeluaran harus berupa array');
-  }
-
-  const now = new Date().toISOString();
-  const normalized = rows.map(function(row) {
-    return normalizePengeluaran_(row, now);
-  });
-
-  writeJsonSheet_(SHEETS.pengeluaran, normalized);
-}
-
-function deletePengeluaran_(id) {
-  if (!id) throw new Error('ID pengeluaran kosong');
-  const rows = readJsonSheet_(SHEETS.pengeluaran);
-  const nextRows = rows.filter(function(item) {
-    return String(item.id || '') !== String(id || '');
-  });
-  writeJsonSheet_(SHEETS.pengeluaran, nextRows);
 }
 
 function addCommand_(command) {

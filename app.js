@@ -149,14 +149,9 @@ const CASH_ACCOUNT_STORAGE_KEY = 'tandon_cash_accounts';
 const CASH_ADJUST_STORAGE_KEY = 'tandon_cash_adjustments';
 const SHEET_REFRESH_INTERVAL_MS = 5000;
 
-// Produksi: semua data awal dikosongkan. Paket asli diambil dari Google Sheet.
 const defaultPaket = [];
 
-// Produksi: jangan tampilkan pelanggan contoh di perangkat baru.
-// Data asli akan otomatis ditarik dari Google Sheet setelah login.
 const defaultPelanggan = [];
-
-const DEFAULT_APPS_SCRIPT_URL = '';
 
 const defaultSettings = {
   businessName: 'Tandon Network',
@@ -169,7 +164,7 @@ const defaultSettings = {
   prepaidDays: 30,
   isolationMode: 'Manual',
   currency: 'IDR',
-  appsScriptUrl: DEFAULT_APPS_SCRIPT_URL,
+  appsScriptUrl: '',
   mikrotikProxyUrl: '',
   mikrotikToken: '',
   routerName: 'Router Utama',
@@ -202,14 +197,12 @@ Mohon segera melakukan pembayaran agar layanan tetap aktif.
 Terima kasih. - {usaha}`
 };
 
-// Produksi: jangan tampilkan pengeluaran contoh di perangkat baru.
 const defaultPengeluaran = [];
 
 const defaultAset = [];
 
 const defaultCashAdjustments = [];
 
-// Produksi: rekening/kas awal dikosongkan supaya semua saldo mulai dari 0.
 const defaultCashAccounts = [];
 
 const CUSTOMER_DAY_PACKAGES = Array.from({ length: 30 }, (_, index) => {
@@ -266,64 +259,23 @@ let pengeluaran = loadData(EXPENSE_STORAGE_KEY, defaultPengeluaran);
 let aset = loadData(ASSET_STORAGE_KEY, defaultAset);
 let cashAccounts = loadData(CASH_ACCOUNT_STORAGE_KEY, defaultCashAccounts);
 let cashAdjustments = loadData(CASH_ADJUST_STORAGE_KEY, defaultCashAdjustments);
-let settings = normalizeSettings(loadData(SETTINGS_STORAGE_KEY, defaultSettings));
+let settings = loadData(SETTINGS_STORAGE_KEY, defaultSettings);
 let pendingCommands = loadData(COMMAND_STORAGE_KEY, []);
 let activityLogs = loadData(ACTIVITY_STORAGE_KEY, []);
 let sheetRefreshTimer = null;
 let isRefreshingPemasukan = false;
 let isRefreshingPendingCommands = false;
-let isRefreshingAllData = false;
-let isWritingToSheet = false;
+let isRefreshingAllSheet = false;
+let isSyncingAllSheet = false;
+let isApplyingRemoteData = false;
+let lastLocalMutationAt = 0;
+const LOCAL_MUTATION_GRACE_MS = 3500;
 normalizePackages();
 
 function loadData(key, fallback) {
   const saved = localStorage.getItem(key);
   if (!saved) return fallback;
   try { return JSON.parse(saved); } catch { return fallback; }
-}
-
-function normalizeSettings(value = {}) {
-  const merged = { ...defaultSettings, ...(value || {}) };
-  if (!merged.appsScriptUrl && DEFAULT_APPS_SCRIPT_URL) merged.appsScriptUrl = DEFAULT_APPS_SCRIPT_URL;
-  if (!merged.mikrotikToken) merged.mikrotikToken = 'TANDON12345';
-  return merged;
-}
-
-
-let cachedServerAppsScriptUrl = '';
-
-async function getServerAppsScriptUrl() {
-  if (cachedServerAppsScriptUrl) return cachedServerAppsScriptUrl;
-  try {
-    const response = await fetch('/.netlify/functions/config', { cache: 'no-store' });
-    if (!response.ok) return '';
-    const json = await response.json();
-    cachedServerAppsScriptUrl = String(json.appsScriptUrl || '').trim();
-    return cachedServerAppsScriptUrl;
-  } catch (error) {
-    console.warn('Gagal membaca konfigurasi Netlify:', error);
-    return '';
-  }
-}
-
-async function getAppsScriptEndpoint() {
-  const serverUrl = await getServerAppsScriptUrl();
-  if (serverUrl) {
-    if (settings.appsScriptUrl !== serverUrl) {
-      settings.appsScriptUrl = serverUrl;
-      saveSettings();
-      const input = document.getElementById('settingAppsScriptUrl');
-      if (input) input.value = serverUrl;
-    }
-    return serverUrl;
-  }
-
-  const localUrl = String(settings.appsScriptUrl || DEFAULT_APPS_SCRIPT_URL || '').trim();
-  if (localUrl && settings.appsScriptUrl !== localUrl) {
-    settings.appsScriptUrl = localUrl;
-    saveSettings();
-  }
-  return localUrl;
 }
 
 function savePelanggan() { localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(pelanggan)); }
@@ -338,6 +290,39 @@ function saveCashAdjustments() { localStorage.setItem(CASH_ADJUST_STORAGE_KEY, J
 function saveSettings() { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings)); }
 function saveCommands() { localStorage.setItem(COMMAND_STORAGE_KEY, JSON.stringify(pendingCommands)); }
 function saveActivityLogs() { localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(activityLogs)); }
+
+
+function markLocalMutation() {
+  lastLocalMutationAt = Date.now();
+}
+
+function recentlyMutatedLocalData() {
+  return Date.now() - lastLocalMutationAt < LOCAL_MUTATION_GRACE_MS;
+}
+
+function getEffectiveAppsScriptUrl() {
+  return String(settings.appsScriptUrl || '').trim();
+}
+
+async function ensureAppsScriptUrlFromNetlifyConfig(options = {}) {
+  if (getEffectiveAppsScriptUrl() && !options.force) return getEffectiveAppsScriptUrl();
+
+  try {
+    const response = await fetch('/.netlify/functions/config', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Config Netlify tidak tersedia');
+    const config = await response.json();
+    const url = String(config.appsScriptUrl || '').trim();
+    if (url) {
+      settings.appsScriptUrl = url;
+      saveSettings();
+      return url;
+    }
+  } catch (error) {
+    console.warn('Gagal membaca config Netlify:', error);
+  }
+
+  return getEffectiveAppsScriptUrl();
+}
 
 function currentOperatorName() {
   return settings.adminName || settings.loginUsername || 'Administrator';
@@ -415,15 +400,14 @@ function normalizePackages() {
 async function showDashboard() {
   loginPage.classList.add('hidden');
   dashboardPage.classList.remove('hidden');
-  applySettingsToUI();
 
-  // Perangkat baru seperti HP belum punya localStorage.
-  // Setelah login, langsung tarik data dari Google Sheet supaya tidak muncul data default lokal.
-  await autoPullFromGoogleSheetOnLogin();
+  applySettingsToUI();
+  await ensureAppsScriptUrlFromNetlifyConfig();
+  await pullAllFromGoogleSheetOnLogin();
 
   renderAll();
   startSheetAutoRefresh();
-  refreshPemasukanFromSheet({ force: true });
+  refreshAllFromGoogleSheet({ force: true, silent: true });
 }
 
 function showLogin() {
@@ -478,7 +462,7 @@ loginForm.addEventListener('submit', async (event) => {
   loginBtn.textContent = 'Memeriksa...';
 
   try {
-    const endpoint = await getAppsScriptEndpoint();
+    const endpoint = await ensureAppsScriptUrlFromNetlifyConfig();
 
     if (endpoint) {
       const result = await postToAppsScript(endpoint, {
@@ -494,7 +478,7 @@ loginForm.addEventListener('submit', async (event) => {
           settings.adminName = result.user.name;
           saveSettings();
         }
-        showDashboard();
+        await showDashboard();
         return;
       }
 
@@ -516,7 +500,7 @@ loginForm.addEventListener('submit', async (event) => {
     if (user === fallbackUser && pass === fallbackPass) {
       localStorage.setItem('tandon_login', 'true');
       localStorage.setItem('tandon_login_user', JSON.stringify({ username: user, name: settings.adminName || 'Administrator' }));
-      showDashboard();
+      await showDashboard();
     } else {
       await openPremiumAlert({
         title: 'Login gagal',
@@ -534,7 +518,7 @@ loginForm.addEventListener('submit', async (event) => {
     if (user === fallbackUser && pass === fallbackPass) {
       localStorage.setItem('tandon_login', 'true');
       showToast('Login lokal dipakai karena koneksi UserLogin sheet belum tersedia.');
-      showDashboard();
+      await showDashboard();
     } else {
       await openPremiumAlert({
         title: 'Gagal cek UserLogin',
@@ -623,6 +607,7 @@ customerForm?.addEventListener('submit', async (event) => {
   addActivityLog(isEdit ? 'Edit Pelanggan' : 'Tambah Pelanggan', `${payload.nama} / ${payload.username}`, { pelangganId: payload.id, username: payload.username, tipe: payload.tipe });
 
   savePelanggan();
+  markLocalMutation();
   closeCustomer();
   renderAll();
   goToPage('pelanggan');
@@ -697,7 +682,7 @@ cancelPackage?.addEventListener('click', closePackage);
 packageModal?.addEventListener('click', (event) => { if (event.target === packageModal) closePackage(); });
 searchPackage?.addEventListener('input', renderPaket);
 
-packageForm?.addEventListener('submit', (event) => {
+packageForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const id = document.getElementById('packageId').value || crypto.randomUUID();
@@ -721,9 +706,11 @@ packageForm?.addEventListener('submit', (event) => {
   else paket.unshift(normalizePackageItem(payload));
 
   savePaket();
+  markLocalMutation();
   closePackage();
   renderAll();
   goToPage('paket');
+  await syncAllToGoogleSheet({ silent: true });
 });
 
 function openPackage(item = null) {
@@ -794,7 +781,7 @@ filterInvoiceType?.addEventListener('change', renderTagihan);
 
 document.getElementById('invoiceCustomer')?.addEventListener('change', fillInvoiceFromCustomer);
 
-invoiceForm?.addEventListener('submit', (event) => {
+invoiceForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const customerId = document.getElementById('invoiceCustomer').value;
@@ -823,9 +810,11 @@ invoiceForm?.addEventListener('submit', (event) => {
   else tagihan.unshift(payload);
 
   saveTagihan();
+  markLocalMutation();
   closeInvoice();
   renderAll();
   goToPage('tagihan');
+  await syncAllToGoogleSheet({ silent: true });
 });
 
 function openInvoice(invoice = null) {
@@ -916,7 +905,7 @@ paymentModal?.addEventListener('click', (event) => { if (event.target === paymen
 searchPayment?.addEventListener('input', renderPembayaran);
 filterPaymentMethod?.addEventListener('change', renderPembayaran);
 
-paymentForm?.addEventListener('submit', (event) => {
+paymentForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const invoiceId = document.getElementById('paymentInvoiceId').value;
@@ -963,9 +952,11 @@ paymentForm?.addEventListener('submit', (event) => {
   savePembayaran();
   saveTagihan();
   savePelanggan();
+  markLocalMutation();
   closePayment();
   renderAll();
   goToPage('pembayaran');
+  await syncAllToGoogleSheet({ silent: true });
 });
 
 function openPayment(invoiceId) {
@@ -1112,7 +1103,7 @@ document.getElementById('resetWaTemplateBtn')?.addEventListener('click', () => {
 
 resetSettingsBtn?.addEventListener('click', () => {
   if (!confirm('Reset pengaturan ke default?')) return;
-  settings = normalizeSettings(defaultSettings);
+  settings = {...defaultSettings};
   saveSettings();
   renderAll();
   showToast('Pengaturan direset');
@@ -1184,14 +1175,11 @@ expenseForm?.addEventListener('submit', async (event) => {
   addActivityLog(isEditExpense ? 'Edit Pengeluaran' : 'Tambah Pengeluaran', `${payload.description} ${formatRupiah(payload.amount)}`, { amount: payload.amount, method: payload.method });
 
   savePengeluaran();
+  markLocalMutation();
   closeExpense();
   renderAll();
   goToPage('pengeluaran');
-
-  const syncResult = await syncPengeluaranToGoogleSheet({ silent: true });
-  if (!syncResult.ok) {
-    showToast('Pengeluaran tersimpan lokal, tetapi belum masuk Google Sheet. Cek koneksi/Apps Script.');
-  }
+  await syncAllToGoogleSheet({ silent: true });
 });
 
 function openExpense(item = null) {
@@ -1218,16 +1206,16 @@ function closeExpense() {
 function activeCashAccounts() {
   const rows = Array.isArray(cashAccounts) ? cashAccounts : [];
   const active = rows.filter((item) => String(item.status || 'Aktif').toLowerCase() !== 'nonaktif' && String(item.name || '').trim());
-  return active.length ? active : defaultCashAccounts;
+  return active;
 }
 
-function cashAccountMethodValue(item) {
-  return String(item.name || '').trim() || 'Tunai';
+function cashAccountMethodValue(item = {}) {
+  return String(item?.name || '').trim() || 'Tunai';
 }
 
-function cashAccountLabel(item) {
+function cashAccountLabel(item = {}) {
   const name = cashAccountMethodValue(item);
-  if (String(item.type || '').toLowerCase() === 'tunai') return 'Tunai';
+  if (String(item?.type || '').toLowerCase() === 'tunai') return 'Tunai';
   if (String(item.note || '').toLowerCase().includes('transfer')) return item.note;
   if (String(item.type || '').toLowerCase().includes('wallet')) return `Transfer E-Wallet ${name}`;
   if (String(item.type || '').toLowerCase().includes('bank')) return `Transfer ${name}`;
@@ -1324,7 +1312,7 @@ function renderCashAdjustments() {
   }).join('');
 }
 
-cashAdjustForm?.addEventListener('submit', (event) => {
+cashAdjustForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const id = document.getElementById('cashAdjustId').value || crypto.randomUUID();
   const amount = Number(document.getElementById('cashAdjustAmount').value || 0);
@@ -1344,7 +1332,8 @@ cashAdjustForm?.addEventListener('submit', (event) => {
   else cashAdjustments.unshift(payload);
   saveCashAdjustments();
   addActivityLog(index >= 0 ? 'Edit Penyesuaian Kas' : 'Tambah Penyesuaian Kas', `${payload.method} ${payload.type} ${formatRupiah(payload.amount)}`, { cashAdjustId: payload.id, method: payload.method, type: payload.type, amount: payload.amount });
-  syncCashAdjustmentsToGoogleSheet({ silent: true });
+  markLocalMutation();
+  await syncCashAdjustmentsToGoogleSheet({ silent: true });
   closeCashAdjust();
   renderAll();
   showToast('Penyesuaian kas berhasil disimpan');
@@ -1377,13 +1366,14 @@ function editCashAdjust(id) {
   if (item) openCashAdjust(item);
 }
 
-function hapusCashAdjust(id) {
+async function hapusCashAdjust(id) {
   const item = cashAdjustments.find((row) => row.id === id);
   if (!item) return;
   if (!confirm(`Hapus penyesuaian kas ${item.method || ''} ${formatRupiah(item.amount || 0)}?`)) return;
   cashAdjustments = cashAdjustments.filter((row) => row.id !== id);
   saveCashAdjustments();
-  syncCashAdjustmentsToGoogleSheet({ silent: true });
+  markLocalMutation();
+  await syncCashAdjustmentsToGoogleSheet({ silent: true });
   renderAll();
   showToast('Penyesuaian kas dihapus');
 }
@@ -1446,7 +1436,7 @@ function renderCashAccounts() {
   `).join('');
 }
 
-cashAccountForm?.addEventListener('submit', (event) => {
+cashAccountForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const id = document.getElementById('cashAccountId').value || crypto.randomUUID();
   const name = document.getElementById('cashAccountName').value.trim();
@@ -1468,7 +1458,8 @@ cashAccountForm?.addEventListener('submit', (event) => {
   else cashAccounts.push(payload);
   saveCashAccounts();
   addActivityLog(index >= 0 ? 'Edit Bank & Tunai' : 'Tambah Bank & Tunai', `${payload.name} (${payload.type})`, { accountId: payload.id });
-  syncCashAccountsToGoogleSheet({ silent: true });
+  markLocalMutation();
+  await syncCashAccountsToGoogleSheet({ silent: true });
   closeCashAccount();
   renderAll();
   showToast('Bank & Tunai berhasil disimpan');
@@ -1496,7 +1487,7 @@ function editCashAccount(id) {
   if (item) openCashAccount(item);
 }
 
-function hapusCashAccount(id) {
+async function hapusCashAccount(id) {
   const item = cashAccounts.find((row) => row.id === id);
   if (!item) return;
   const used = pemasukan.some((row) => normalizeMethodName(row.method || row.metode || '').toLowerCase() === normalizeMethodName(item.name).toLowerCase()) || pengeluaran.some((row) => normalizeMethodName(row.method || row.metode || '').toLowerCase() === normalizeMethodName(item.name).toLowerCase());
@@ -1505,7 +1496,8 @@ function hapusCashAccount(id) {
   if (used) item.status = 'Nonaktif';
   else cashAccounts = cashAccounts.filter((row) => row.id !== id);
   saveCashAccounts();
-  syncCashAccountsToGoogleSheet({ silent: true });
+  markLocalMutation();
+  await syncCashAccountsToGoogleSheet({ silent: true });
   renderAll();
   showToast(used ? 'Metode dinonaktifkan' : 'Metode dihapus');
 }
@@ -1573,22 +1565,12 @@ async function hapusPengeluaran(id) {
 
   if (!confirm(`Hapus pengeluaran ${item.description || item.category}?`)) return;
 
-  const beforeDelete = [...pengeluaran];
   pengeluaran = pengeluaran.filter((row) => row.id !== id);
   savePengeluaran();
+  markLocalMutation();
   renderAll();
-
-  const syncResult = await deletePengeluaranFromGoogleSheet(id);
-  if (!syncResult.ok) {
-    pengeluaran = beforeDelete;
-    savePengeluaran();
-    renderAll();
-    showToast('Gagal hapus di Google Sheet. Data lokal dikembalikan.');
-    return;
-  }
-
-  await refreshAllDataFromSheet({ force: true, silent: true });
-  showToast('Pengeluaran berhasil dihapus dan disinkronkan.');
+  const syncResult = await syncAllToGoogleSheet({ silent: true });
+  showToast(syncResult.ok ? 'Pengeluaran dihapus dan tersinkron ke Sheet' : 'Pengeluaran dihapus lokal, gagal sinkron Sheet');
 }
 
 function getExpenseThisMonth() {
@@ -1600,7 +1582,7 @@ function getExpenseThisMonth() {
 
 
 /* ASSET */
-assetForm?.addEventListener('submit', (event) => {
+assetForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const id = document.getElementById('assetId').value || crypto.randomUUID();
@@ -1633,7 +1615,8 @@ assetForm?.addEventListener('submit', (event) => {
   addActivityLog(isEditAsset ? 'Edit Aset' : 'Tambah Aset', `${payload.namaAset} ${formatRupiah(payload.totalHarga)}`, { asetId: payload.id, totalHarga: payload.totalHarga });
 
   saveAset();
-  syncAsetToGoogleSheet(payload, { silent: true });
+  markLocalMutation();
+  await syncAsetToGoogleSheet(payload, { silent: true });
   closeAset();
   renderAll();
   goToPage('aset');
@@ -1724,7 +1707,7 @@ function editAset(id) {
   if (item) openAset(item);
 }
 
-function hapusAset(id) {
+async function hapusAset(id) {
   const item = aset.find((row) => row.id === id);
   if (!item) return;
   if (!confirm(`Hapus aset ${item.namaAset || item.name || ''}?`)) return;
@@ -1885,14 +1868,17 @@ function editPelanggan(id) {
   if (customer) openCustomer(customer);
 }
 
-function hapusPelanggan(id) {
+async function hapusPelanggan(id) {
   const customer = pelanggan.find((item) => item.id === id);
   if (!customer) return;
   if (!confirm(`Hapus pelanggan ${customer.nama}?`)) return;
   pelanggan = pelanggan.filter((item) => item.id !== id);
   addActivityLog('Hapus Pelanggan', `${customer.nama} / ${customer.username || '-'}`, { pelangganId: customer.id, username: customer.username });
   savePelanggan();
+  markLocalMutation();
   renderAll();
+  const syncResult = await syncAllToGoogleSheet({ silent: true });
+  showToast(syncResult.ok ? 'Pelanggan dihapus dan tersinkron ke Sheet' : 'Pelanggan dihapus lokal, gagal sinkron Sheet');
 }
 
 function editPaket(id) {
@@ -1900,7 +1886,7 @@ function editPaket(id) {
   if (item) openPackage(item);
 }
 
-function hapusPaket(id) {
+async function hapusPaket(id) {
   const item = paket.find((row) => row.id === id);
   if (!item) return;
 
@@ -1910,7 +1896,9 @@ function hapusPaket(id) {
   if (!confirm(`Hapus paket ${item.nama}?`)) return;
   paket = paket.filter((row) => row.id !== id);
   savePaket();
+  markLocalMutation();
   renderAll();
+  await syncAllToGoogleSheet({ silent: true });
 }
 
 function editInvoice(id) {
@@ -1918,7 +1906,7 @@ function editInvoice(id) {
   if (invoice) openInvoice(invoice);
 }
 
-function hapusInvoice(id) {
+async function hapusInvoice(id) {
   const invoice = tagihan.find((row) => row.id === id);
   if (!invoice) return;
 
@@ -1928,7 +1916,9 @@ function hapusInvoice(id) {
   if (!confirm(`Hapus tagihan ${invoice.nomor}?`)) return;
   tagihan = tagihan.filter((row) => row.id !== id);
   saveTagihan();
+  markLocalMutation();
   renderAll();
+  await syncAllToGoogleSheet({ silent: true });
 }
 
 
@@ -3402,7 +3392,7 @@ function deleteCommand(id) {
   renderAll();
 }
 
-function clearDoneCommands() {
+async function clearDoneCommands() {
   const doneCount = pendingCommands.filter((item) => item.status === 'DONE').length;
   if (!doneCount) return showToast('Tidak ada command DONE');
 
@@ -3423,54 +3413,6 @@ function formatDateTime(value) {
 
 
 
-
-
-async function syncPengeluaranToGoogleSheet(options = {}) {
-  const endpoint = await getAppsScriptEndpoint();
-  if (!endpoint) {
-    const message = 'URL Google Apps Script belum tersedia.';
-    if (!options.silent) showToast(message);
-    return { ok: false, message };
-  }
-
-  isWritingToSheet = true;
-  try {
-    const result = await postToAppsScript(endpoint, {
-      action: 'savePengeluaran',
-      pengeluaran
-    });
-    if (!result.ok) throw new Error(result.message || 'Gagal menyimpan pengeluaran');
-    if (!options.silent) showToast('Pengeluaran berhasil sinkron ke Google Sheet');
-    return result;
-  } catch (error) {
-    console.error(error);
-    const message = error.message || 'Gagal sinkron pengeluaran';
-    if (!options.silent) showToast(message);
-    return { ok: false, message };
-  } finally {
-    isWritingToSheet = false;
-  }
-}
-
-async function deletePengeluaranFromGoogleSheet(id) {
-  const endpoint = await getAppsScriptEndpoint();
-  if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum tersedia.' };
-
-  isWritingToSheet = true;
-  try {
-    const result = await postToAppsScript(endpoint, {
-      action: 'deletePengeluaran',
-      id
-    });
-    if (!result.ok) throw new Error(result.message || 'Gagal menghapus pengeluaran');
-    return result;
-  } catch (error) {
-    console.error(error);
-    return { ok: false, message: error.message || 'Gagal hapus pengeluaran' };
-  } finally {
-    isWritingToSheet = false;
-  }
-}
 
 async function syncPemasukanToGoogleSheet(income, options = {}) {
   const endpoint = settings.appsScriptUrl;
@@ -3568,72 +3510,16 @@ async function refreshPendingCommandsFromSheet(options = {}) {
   }
 }
 
-
-function applySheetDataToLocal(data = {}) {
-  pelanggan = Array.isArray(data.pelanggan) ? data.pelanggan : pelanggan;
-  paket = Array.isArray(data.paket) ? data.paket : paket;
-  tagihan = Array.isArray(data.tagihan) ? data.tagihan : tagihan;
-  pembayaran = Array.isArray(data.pembayaran) ? data.pembayaran : pembayaran;
-  pemasukan = Array.isArray(data.pemasukan) ? data.pemasukan : pemasukan;
-  pengeluaran = Array.isArray(data.pengeluaran) ? data.pengeluaran : pengeluaran;
-  aset = Array.isArray(data.aset) ? data.aset : aset;
-  cashAccounts = Array.isArray(data.cashAccounts) ? data.cashAccounts : cashAccounts;
-  cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
-  pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
-  activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-  settings = data.settings && typeof data.settings === 'object' ? normalizeSettings({ ...settings, ...data.settings }) : normalizeSettings(settings);
-
-  savePelanggan();
-  savePaket();
-  saveTagihan();
-  savePembayaran();
-  savePemasukan();
-  savePengeluaran();
-  saveAset();
-  saveCashAccounts();
-  saveCashAdjustments();
-  saveCommands();
-  saveActivityLogs();
-  saveSettings();
-}
-
-async function refreshAllDataFromSheet(options = {}) {
-  if (isRefreshingAllData && !options.force) return { ok: false, message: 'Refresh masih berjalan' };
-  if (isWritingToSheet && !options.force) return { ok: false, message: 'Sedang menyimpan data' };
-
-  const endpoint = await getAppsScriptEndpoint();
-  if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
-
-  isRefreshingAllData = true;
-  try {
-    const result = await postToAppsScript(endpoint, {
-      action: 'getAll',
-      t: Date.now()
-    });
-
-    if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
-    applySheetDataToLocal(result.data || {});
-    settings.appsScriptUrl = endpoint;
-    saveSettings();
-    renderAll();
-    return { ok: true };
-  } catch (error) {
-    console.warn('Gagal refresh semua data dari Google Sheet:', error);
-    if (!options.silent) showToast('Gagal refresh data dari Google Sheet');
-    return { ok: false, message: error.message };
-  } finally {
-    isRefreshingAllData = false;
-  }
-}
-
 function startSheetAutoRefresh() {
   stopSheetAutoRefresh();
 
-  refreshAllDataFromSheet({ force: true, silent: true });
+  if (!getEffectiveAppsScriptUrl()) return;
+
+  refreshAllFromGoogleSheet({ force: true, silent: true });
 
   sheetRefreshTimer = setInterval(() => {
     if (localStorage.getItem('tandon_login') === 'true' && !document.hidden) {
-      refreshAllDataFromSheet({ silent: true });
+      refreshAllFromGoogleSheet({ silent: true });
     }
   }, SHEET_REFRESH_INTERVAL_MS);
 }
@@ -3647,22 +3533,26 @@ function stopSheetAutoRefresh() {
 
 window.addEventListener('focus', () => {
   if (localStorage.getItem('tandon_login') === 'true') {
-    refreshAllDataFromSheet({ force: true, silent: true });
+    refreshAllFromGoogleSheet({ force: true, silent: true });
   }
 });
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && localStorage.getItem('tandon_login') === 'true') {
-    refreshAllDataFromSheet({ force: true, silent: true });
+    refreshAllFromGoogleSheet({ force: true, silent: true });
   }
 });
 
 /* GOOGLE SHEET SYNC */
 async function syncAllToGoogleSheet(options = {}) {
-  const endpoint = settings.appsScriptUrl;
+  markLocalMutation();
+  if (isSyncingAllSheet && !options.force) return { ok: false, message: 'Sinkronisasi sedang berjalan' };
+  const endpoint = getEffectiveAppsScriptUrl();
   if (!endpoint) {
     return { ok: false, message: 'URL Google Apps Script belum diisi' };
   }
+
+  isSyncingAllSheet = true;
 
   try {
     const payload = {
@@ -3691,6 +3581,8 @@ async function syncAllToGoogleSheet(options = {}) {
     console.error(error);
     if (!options.silent) alert(`Gagal kirim ke Google Sheet: ${error.message}`);
     return { ok: false, message: error.message };
+  } finally {
+    isSyncingAllSheet = false;
   }
 }
 
@@ -3710,53 +3602,8 @@ async function pushToGoogleSheet() {
   }
 }
 
-
-async function autoPullFromGoogleSheetOnLogin() {
-  const endpoint = await getAppsScriptEndpoint();
-  if (!endpoint) return { ok: false, message: 'URL Apps Script belum tersedia' };
-
-  try {
-    const result = await postToAppsScript(endpoint, { action: 'getAll' });
-    if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
-
-    const data = result.data || {};
-    pelanggan = Array.isArray(data.pelanggan) ? data.pelanggan : pelanggan;
-    paket = Array.isArray(data.paket) ? data.paket : paket;
-    tagihan = Array.isArray(data.tagihan) ? data.tagihan : tagihan;
-    pembayaran = Array.isArray(data.pembayaran) ? data.pembayaran : pembayaran;
-    pemasukan = Array.isArray(data.pemasukan) ? data.pemasukan : pemasukan;
-    pengeluaran = Array.isArray(data.pengeluaran) ? data.pengeluaran : pengeluaran;
-    aset = Array.isArray(data.aset) ? data.aset : aset;
-    cashAccounts = Array.isArray(data.cashAccounts) ? data.cashAccounts : cashAccounts;
-    cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
-    pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
-    activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-    settings = data.settings && typeof data.settings === 'object' ? normalizeSettings({ ...settings, ...data.settings }) : normalizeSettings(settings);
-    settings.appsScriptUrl = endpoint;
-
-    savePelanggan();
-    savePaket();
-    saveTagihan();
-    savePembayaran();
-    savePemasukan();
-    savePengeluaran();
-    saveAset();
-    saveCashAccounts();
-    saveCashAdjustments();
-    saveCommands();
-    saveActivityLogs();
-    saveSettings();
-
-    return { ok: true };
-  } catch (error) {
-    console.error(error);
-    showToast('Data Sheet belum berhasil dimuat. Cek URL Apps Script / koneksi.');
-    return { ok: false, message: error.message };
-  }
-}
-
 async function pullFromGoogleSheet() {
-  const endpoint = await getAppsScriptEndpoint();
+  const endpoint = settings.appsScriptUrl;
   if (!endpoint) {
     goToPage('pengaturan');
     alert('Isi dulu URL Google Apps Script di menu Pengaturan.');
@@ -3768,23 +3615,42 @@ async function pullFromGoogleSheet() {
   setSyncLoading(true);
 
   try {
-    const result = await postToAppsScript(endpoint, {action: 'getAll'});
+    const result = await fetchAllFromGoogleSheet();
     if (!result.ok) throw new Error(result.message || 'Gagal mengambil data');
 
-    const data = result.data || {};
-    pelanggan = Array.isArray(data.pelanggan) ? data.pelanggan : pelanggan;
-    paket = Array.isArray(data.paket) ? data.paket : paket;
-    tagihan = Array.isArray(data.tagihan) ? data.tagihan : tagihan;
-    pembayaran = Array.isArray(data.pembayaran) ? data.pembayaran : pembayaran;
-    pemasukan = Array.isArray(data.pemasukan) ? data.pemasukan : pemasukan;
-    pengeluaran = Array.isArray(data.pengeluaran) ? data.pengeluaran : pengeluaran;
-    aset = Array.isArray(data.aset) ? data.aset : aset;
-    cashAccounts = Array.isArray(data.cashAccounts) ? data.cashAccounts : cashAccounts;
-    cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
-    pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
-    activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-    settings = data.settings && typeof data.settings === 'object' ? normalizeSettings(data.settings) : settings;
-    settings.appsScriptUrl = endpoint;
+    applyAllDataFromSheet(result.data || {});
+    showToast('Data berhasil diambil dari Google Sheet');
+  } catch (error) {
+    console.error(error);
+    alert(`Gagal ambil dari Google Sheet: ${error.message}`);
+  } finally {
+    setSyncLoading(false);
+  }
+}
+
+
+function applyAllDataFromSheet(data = {}, options = {}) {
+  isApplyingRemoteData = true;
+  try {
+    if (Array.isArray(data.pelanggan)) pelanggan = data.pelanggan;
+    if (Array.isArray(data.paket)) paket = data.paket.map(normalizePackageItem);
+    if (Array.isArray(data.tagihan)) tagihan = data.tagihan;
+    if (Array.isArray(data.pembayaran)) pembayaran = data.pembayaran;
+    if (Array.isArray(data.pemasukan)) pemasukan = data.pemasukan;
+    if (Array.isArray(data.pengeluaran)) pengeluaran = data.pengeluaran;
+    if (Array.isArray(data.aset)) aset = data.aset;
+    if (Array.isArray(data.cashAccounts)) cashAccounts = data.cashAccounts;
+    if (Array.isArray(data.cashAdjustments)) cashAdjustments = data.cashAdjustments;
+    if (Array.isArray(data.pendingCommands)) pendingCommands = data.pendingCommands;
+    if (Array.isArray(data.activityLogs)) activityLogs = data.activityLogs;
+
+    if (data.settings && typeof data.settings === 'object') {
+      const currentAppsScriptUrl = settings.appsScriptUrl;
+      const currentMikrotikToken = settings.mikrotikToken;
+      settings = { ...defaultSettings, ...settings, ...data.settings };
+      if (!settings.appsScriptUrl && currentAppsScriptUrl) settings.appsScriptUrl = currentAppsScriptUrl;
+      if (!settings.mikrotikToken && currentMikrotikToken) settings.mikrotikToken = currentMikrotikToken;
+    }
 
     savePelanggan();
     savePaket();
@@ -3799,13 +3665,59 @@ async function pullFromGoogleSheet() {
     saveActivityLogs();
     saveSettings();
 
-    renderAll();
-    showToast('Data berhasil diambil dari Google Sheet');
-  } catch (error) {
-    console.error(error);
-    alert(`Gagal ambil dari Google Sheet: ${error.message}`);
+    if (!options.skipRender) renderAll();
+    return { ok: true };
   } finally {
-    setSyncLoading(false);
+    isApplyingRemoteData = false;
+  }
+}
+
+async function fetchAllFromGoogleSheet() {
+  const endpoint = getEffectiveAppsScriptUrl();
+  if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum diisi' };
+  return await postToAppsScript(endpoint, { action: 'getAll', t: Date.now() });
+}
+
+async function pullAllFromGoogleSheetOnLogin() {
+  const endpoint = getEffectiveAppsScriptUrl();
+  if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum diisi' };
+
+  try {
+    const result = await fetchAllFromGoogleSheet();
+    if (result?.ok) {
+      applyAllDataFromSheet(result.data || {}, { skipRender: true });
+      return { ok: true };
+    }
+    return { ok: false, message: result?.message || 'Gagal mengambil data' };
+  } catch (error) {
+    console.warn('Gagal auto pull data saat login:', error);
+    return { ok: false, message: error.message };
+  }
+}
+
+async function refreshAllFromGoogleSheet(options = {}) {
+  if (isRefreshingAllSheet && !options.force) return { ok: false, message: 'Refresh sedang berjalan' };
+  if (isSyncingAllSheet || isApplyingRemoteData) return { ok: false, message: 'Sinkronisasi lokal sedang berjalan' };
+  if (!options.force && recentlyMutatedLocalData()) return { ok: false, message: 'Menunggu perubahan lokal selesai' };
+
+  const endpoint = getEffectiveAppsScriptUrl();
+  if (!endpoint) return { ok: false, message: 'URL Google Apps Script belum diisi' };
+
+  isRefreshingAllSheet = true;
+  try {
+    const result = await fetchAllFromGoogleSheet();
+    if (result?.ok) {
+      applyAllDataFromSheet(result.data || {}, { skipRender: false });
+      return { ok: true };
+    }
+    if (!options.silent) showToast(result?.message || 'Gagal refresh data Google Sheet');
+    return { ok: false, message: result?.message || 'Gagal refresh data Google Sheet' };
+  } catch (error) {
+    console.warn('Gagal refresh semua data Google Sheet:', error);
+    if (!options.silent) showToast('Gagal refresh data Google Sheet');
+    return { ok: false, message: error.message };
+  } finally {
+    isRefreshingAllSheet = false;
   }
 }
 
@@ -3933,7 +3845,7 @@ function importBackupJson(event) {
       cashAdjustments = Array.isArray(data.cashAdjustments) ? data.cashAdjustments : cashAdjustments;
       pendingCommands = Array.isArray(data.pendingCommands) ? data.pendingCommands : pendingCommands;
       activityLogs = Array.isArray(data.activityLogs) ? data.activityLogs : activityLogs;
-      settings = data.settings && typeof data.settings === 'object' ? normalizeSettings(data.settings) : settings;
+      settings = data.settings && typeof data.settings === 'object' ? {...defaultSettings, ...data.settings} : settings;
 
       savePelanggan();
       savePaket();
@@ -4022,7 +3934,7 @@ function resetLocalData() {
   cashAccounts = JSON.parse(JSON.stringify(defaultCashAccounts));
   cashAdjustments = JSON.parse(JSON.stringify(defaultCashAdjustments));
   pendingCommands = [];
-  settings = normalizeSettings(defaultSettings);
+  settings = {...defaultSettings};
 
   savePelanggan();
   savePaket();
@@ -4095,7 +4007,7 @@ function collectSettings() {
     prepaidDays: Number(document.getElementById('settingPrepaidDays')?.value || 30),
     isolationMode: document.getElementById('settingIsolationMode')?.value || 'Manual',
     currency: 'IDR',
-    appsScriptUrl: document.getElementById('settingAppsScriptUrl')?.value.trim() || DEFAULT_APPS_SCRIPT_URL,
+    appsScriptUrl: document.getElementById('settingAppsScriptUrl')?.value.trim() || '',
     mikrotikProxyUrl: document.getElementById('settingMikrotikProxyUrl')?.value.trim() || settings.mikrotikProxyUrl || '',
     mikrotikToken: document.getElementById('settingMikrotikToken')?.value.trim() || settings.mikrotikToken || '',
     routerName: document.getElementById('settingRouterName')?.value.trim() || '',
@@ -4462,7 +4374,7 @@ function goToPage(pageName) {
   document.getElementById(`page-${pageName}`)?.classList.add('active');
 
   if (['dashboard', 'laporan', 'pembayaran', 'pascabayar'].includes(pageName)) {
-    refreshPemasukanFromSheet({ force: true });
+    refreshAllFromGoogleSheet({ force: true, silent: true });
   }
 }
 
@@ -4534,282 +4446,7 @@ function escapeHtml(value) {
 }
 
 startCountdownTimer();
-if (localStorage.getItem('tandon_login') === 'true') showDashboard();
-
-
-/* =========================================================
-   PATCH STABLE: Login aman + sinkron hapus/edit HP & Laptop
-   - Tidak mengganggu proses login walaupun pull data gagal.
-   - Semua hapus penting langsung saveAll ke Google Sheet.
-   - Refresh antar perangkat tetap 5 detik.
-   ========================================================= */
-async function showDashboard() {
-  loginPage.classList.add('hidden');
-  dashboardPage.classList.remove('hidden');
-  applySettingsToUI();
-
-  try {
-    await autoPullFromGoogleSheetOnLogin();
-  } catch (error) {
-    console.warn('Auto pull setelah login gagal:', error);
-    showToast('Login berhasil. Data Sheet belum sempat dimuat, mencoba refresh otomatis.');
-  }
-
-  renderAll();
-  startSheetAutoRefresh();
-  refreshPemasukanFromSheet({ force: true });
-}
-
-async function syncAllToGoogleSheet(options = {}) {
-  const endpoint = await getAppsScriptEndpoint();
-  if (!endpoint) {
-    return { ok: false, message: 'URL Google Apps Script belum tersedia' };
-  }
-
-  if (isWritingToSheet && !options.force) {
-    return { ok: false, message: 'Sedang menyimpan data' };
-  }
-
-  isWritingToSheet = true;
-  try {
-    settings.appsScriptUrl = endpoint;
-    const payload = {
-      action: 'saveAll',
-      data: {
-        pelanggan,
-        paket,
-        tagihan,
-        pembayaran,
-        pemasukan,
-        pengeluaran,
-        aset,
-        cashAccounts,
-        cashAdjustments,
-        pendingCommands,
-        activityLogs,
-        settings
-      }
-    };
-
-    const result = await postToAppsScript(endpoint, payload);
-    if (!result.ok) throw new Error(result.message || 'Gagal menyimpan data');
-    if (!options.silent) showToast('Data berhasil disinkronkan ke Google Sheet');
-    return result;
-  } catch (error) {
-    console.error(error);
-    if (!options.silent) showToast(`Gagal sinkron ke Google Sheet: ${error.message}`);
-    return { ok: false, message: error.message };
-  } finally {
-    isWritingToSheet = false;
-  }
-}
-
-async function stableSyncAfterLocalChange(successMessage = 'Data berhasil tersinkron.') {
-  const result = await syncAllToGoogleSheet({ silent: true, force: true });
-  if (!result.ok) {
-    showToast(result.message || 'Gagal sinkron ke Google Sheet. Coba refresh dan ulangi.');
-    return result;
-  }
-  await refreshAllDataFromSheet({ force: true, silent: true });
-  if (successMessage) showToast(successMessage);
-  return result;
-}
-
-function startSheetAutoRefresh() {
-  stopSheetAutoRefresh();
-  refreshAllDataFromSheet({ force: true, silent: true });
-  sheetRefreshTimer = setInterval(() => {
-    if (localStorage.getItem('tandon_login') === 'true' && !document.hidden && !isWritingToSheet) {
-      refreshAllDataFromSheet({ silent: true });
-    }
-  }, 5000);
-}
-
-async function hapusPelanggan(id) {
-  const customer = pelanggan.find((item) => item.id === id);
-  if (!customer) return;
-  if (!confirm(`Hapus pelanggan ${customer.nama}?`)) return;
-
-  const backup = {
-    pelanggan: [...pelanggan],
-    tagihan: [...tagihan],
-    pembayaran: [...pembayaran],
-    pemasukan: [...pemasukan]
-  };
-
-  pelanggan = pelanggan.filter((item) => item.id !== id);
-  tagihan = tagihan.filter((row) => row.customerId !== id && row.pelangganId !== id && row.pelanggan !== customer.nama && row.customerName !== customer.nama);
-  pembayaran = pembayaran.filter((row) => row.customerId !== id && row.pelangganId !== id && row.pelanggan !== customer.nama && row.customerName !== customer.nama);
-  pemasukan = pemasukan.filter((row) => row.customerId !== id && row.pelangganId !== id && row.pelanggan !== customer.nama && row.customerName !== customer.nama);
-
-  addActivityLog('Hapus Pelanggan', `${customer.nama} / ${customer.username || '-'}`, { pelangganId: customer.id, username: customer.username });
-  savePelanggan();
-  saveTagihan();
-  savePembayaran();
-  savePemasukan();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Pelanggan berhasil dihapus dan tersinkron.');
-  if (!result.ok) {
-    pelanggan = backup.pelanggan;
-    tagihan = backup.tagihan;
-    pembayaran = backup.pembayaran;
-    pemasukan = backup.pemasukan;
-    savePelanggan();
-    saveTagihan();
-    savePembayaran();
-    savePemasukan();
-    renderAll();
-  }
-}
-
-async function hapusPaket(id) {
-  const item = paket.find((row) => row.id === id);
-  if (!item) return;
-  const dipakai = pelanggan.some((customer) => customer.paket === item.speed || customer.paket === item.profile || customer.packageId === item.id);
-  if (dipakai) return alert('Paket ini masih dipakai pelanggan. Ganti paket pelanggan dulu sebelum dihapus.');
-  if (!confirm(`Hapus paket ${item.nama || item.name}?`)) return;
-
-  const backup = [...paket];
-  paket = paket.filter((row) => row.id !== id);
-  savePaket();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Paket berhasil dihapus dan tersinkron.');
-  if (!result.ok) {
-    paket = backup;
-    savePaket();
-    renderAll();
-  }
-}
-
-async function hapusInvoice(id) {
-  const invoice = tagihan.find((row) => row.id === id);
-  if (!invoice) return;
-  const sudahDibayar = pembayaran.some((row) => row.invoiceId === id);
-  if (sudahDibayar) return alert('Tagihan ini sudah memiliki pembayaran, tidak bisa dihapus.');
-  if (!confirm(`Hapus tagihan ${invoice.nomor || ''}?`)) return;
-
-  const backup = [...tagihan];
-  tagihan = tagihan.filter((row) => row.id !== id);
-  saveTagihan();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Tagihan berhasil dihapus dan tersinkron.');
-  if (!result.ok) {
-    tagihan = backup;
-    saveTagihan();
-    renderAll();
-  }
-}
-
-async function hapusPengeluaran(id) {
-  const item = pengeluaran.find((row) => row.id === id);
-  if (!item) return;
-  if (!confirm(`Hapus pengeluaran ${item.description || item.category}?`)) return;
-
-  const backup = [...pengeluaran];
-  pengeluaran = pengeluaran.filter((row) => row.id !== id);
-  savePengeluaran();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Pengeluaran berhasil dihapus dan tersinkron.');
-  if (!result.ok) {
-    pengeluaran = backup;
-    savePengeluaran();
-    renderAll();
-  }
-}
-
-async function hapusAset(id) {
-  const item = aset.find((row) => row.id === id);
-  if (!item) return;
-  if (!confirm(`Hapus aset ${item.name || item.nama || ''}?`)) return;
-
-  const backup = [...aset];
-  aset = aset.filter((row) => row.id !== id);
-  saveAset();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Aset berhasil dihapus dan tersinkron.');
-  if (!result.ok) {
-    aset = backup;
-    saveAset();
-    renderAll();
-  }
-}
-
-async function hapusCashAccount(id) {
-  const item = cashAccounts.find((row) => row.id === id);
-  if (!item) return;
-  const used = pemasukan.some((row) => normalizeMethodName(row.method || row.metode || '').toLowerCase() === normalizeMethodName(item.name).toLowerCase()) || pengeluaran.some((row) => normalizeMethodName(row.method || row.metode || '').toLowerCase() === normalizeMethodName(item.name).toLowerCase());
-  const message = used ? `Metode ${item.name} sudah dipakai transaksi. Nonaktifkan saja agar riwayat tetap rapi?` : `Hapus metode ${item.name}?`;
-  if (!confirm(message)) return;
-
-  const backup = JSON.parse(JSON.stringify(cashAccounts));
-  if (used) item.status = 'Nonaktif';
-  else cashAccounts = cashAccounts.filter((row) => row.id !== id);
-  saveCashAccounts();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange(used ? 'Metode dinonaktifkan dan tersinkron.' : 'Metode dihapus dan tersinkron.');
-  if (!result.ok) {
-    cashAccounts = backup;
-    saveCashAccounts();
-    renderAll();
-  }
-}
-
-async function hapusCashAdjust(id) {
-  const item = cashAdjustments.find((row) => row.id === id);
-  if (!item) return;
-  if (!confirm(`Hapus penyesuaian kas ${item.method || ''} ${formatRupiah(item.amount || 0)}?`)) return;
-
-  const backup = [...cashAdjustments];
-  cashAdjustments = cashAdjustments.filter((row) => row.id !== id);
-  saveCashAdjustments();
-  renderAll();
-
-  const result = await stableSyncAfterLocalChange('Penyesuaian kas dihapus dan tersinkron.');
-  if (!result.ok) {
-    cashAdjustments = backup;
-    saveCashAdjustments();
-    renderAll();
-  }
-}
-
-async function tandaiLunasTunggakan(id) {
-  const customer = pelanggan.find((item) => item.id === id);
-  if (!customer) return;
-  if (!confirm(`Tandai tunggakan ${customer.nama} sudah lunas tanpa menambah pemasukan?`)) return;
-  const backup = { ...customer };
-  customer.tunggakan = 0;
-  customer.status = customer.needsActivation ? 'Isolir / Nonaktif' : 'Aktif';
-  savePelanggan();
-  renderAll();
-  const result = await stableSyncAfterLocalChange('Tunggakan ditandai lunas dan tersinkron.');
-  if (!result.ok) {
-    Object.assign(customer, backup);
-    savePelanggan();
-    renderAll();
-  }
-}
-
-async function hapusTunggakan(id) {
-  const customer = pelanggan.find((item) => item.id === id);
-  if (!customer) return;
-  if (!confirm(`Hapus catatan tunggakan ${customer.nama}?`)) return;
-  const backup = { ...customer };
-  customer.tunggakan = 0;
-  if (String(customer.status || '').toLowerCase().includes('menunggak') || String(customer.status || '').toLowerCase().includes('sebagian')) {
-    customer.status = customer.needsActivation ? 'Isolir / Nonaktif' : 'Aktif';
-  }
-  savePelanggan();
-  renderAll();
-  const result = await stableSyncAfterLocalChange('Catatan tunggakan dihapus dan tersinkron.');
-  if (!result.ok) {
-    Object.assign(customer, backup);
-    savePelanggan();
-    renderAll();
-  }
-}
+(async function initApp() {
+  await ensureAppsScriptUrlFromNetlifyConfig();
+  if (localStorage.getItem('tandon_login') === 'true') await showDashboard();
+})();

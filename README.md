@@ -1,49 +1,35 @@
-# Tandon Network Billing - Auto Sync HP Fix
+# Tandon Network Billing - Normal Base Full Sync Fix
 
-Versi ini memakai arsitektur:
-- GitHub: source code
-- Netlify: web + function proxy MikroTik + function config
-- Google Apps Script: backend Google Sheet
-- MikroTik: ambil command lewat Netlify Function
+Versi ini dibuat dari file normal yang login-nya aman, lalu ditambahkan sinkronisasi multi perangkat.
 
-## Fix penting versi ini
+## Perubahan utama
 
-1. HP/perangkat baru otomatis membaca `APPS_SCRIPT_URL` dari Netlify Environment Variables lewat:
-
-```text
-/.netlify/functions/config
-```
-
-2. Setelah login, aplikasi otomatis menarik data dari Google Sheet.
-
-3. Kalau database/spreadsheet pindah, tidak perlu edit `app.js` lagi. Cukup ganti `APPS_SCRIPT_URL` di Netlify Environment Variables lalu deploy without cache.
+- Data default contoh dihapus: pelanggan, paket, pengeluaran, aset, bank/tunai mulai kosong/0.
+- Login tetap memakai alur stabil dari file normal.
+- Web otomatis membaca `APPS_SCRIPT_URL` dari Netlify Function `/.netlify/functions/config` jika perangkat baru belum punya pengaturan lokal.
+- Setelah login, web otomatis menarik semua data dari Google Sheet.
+- Auto refresh/sinkron semua data penting tiap 5 detik antar HP dan laptop.
+- Saat sedang tambah/edit/hapus/sync data, auto refresh ditahan sebentar agar data lokal tidak ketimpa.
+- Hapus pelanggan, paket, tagihan, pengeluaran, aset, bank/tunai, dan penyesuaian kas ikut sinkron ke Google Sheet.
+- MikroTik tetap lewat Netlify Function `/.netlify/functions/mikrotik`.
 
 ## File yang wajib diupdate
 
-- `app.js`
-- `netlify/functions/config.js`
+1. Upload/replace semua isi folder ini ke GitHub.
+2. Netlify akan deploy otomatis. Jika belum berubah, lakukan:
+   `Deploys -> Trigger deploy -> Deploy project without cache`.
+3. Copy `apps-script/kode.gs` ke Google Apps Script, Save, lalu Deploy new version.
 
-`kode.gs` tidak wajib diganti jika Apps Script yang dipakai sudah versi final dan mendukung action `getAll`.
+## Environment Variables Netlify
 
-## Setelah upload ke GitHub
+Pastikan di Netlify ada:
 
-1. Tunggu Netlify deploy.
-2. Pastikan Environment Variables Netlify berisi:
-   - `APPS_SCRIPT_URL`
-   - `MIKROTIK_TOKEN`
-3. Jalankan:
-   - Deploys -> Trigger deploy -> Deploy project without cache
-4. Di HP, buka mode samaran/incognito untuk tes pertama.
+```text
+APPS_SCRIPT_URL = URL Web App Apps Script /exec
+MIKROTIK_TOKEN = token yang sama dengan script MikroTik
+```
 
+## Yang tidak perlu diubah jika sudah jalan
 
-## Catatan versi no-default-zero
-- Data contoh bawaan dihapus: pelanggan, paket, pengeluaran, aset, rekening/kas kosong.
-- Dashboard perangkat baru akan mulai dari 0 dan otomatis mengambil data dari Google Sheet.
-- Pastikan Netlify Environment Variable APPS_SCRIPT_URL sudah diisi agar perangkat baru tidak memakai URL lokal lama.
-
-
-## Patch stable login full sync
-- Login dibuat aman walau auto-pull data gagal sementara.
-- Hapus pelanggan/paket/tagihan/pengeluaran/aset/bank/tunai/tunggakan langsung sync saveAll ke Google Sheet.
-- Auto refresh antar perangkat tetap 5 detik.
-- Default data contoh tetap kosong/0.
+- Script MikroTik tidak perlu diganti kalau URL Netlify dan token tetap sama.
+- Scheduler MikroTik tidak perlu diganti.
